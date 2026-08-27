@@ -1,0 +1,26 @@
+{
+  "controller": "https://192.168.1.1",
+  "username": "",
+  "password": "",
+  "site": "default",
+  "controller_type": "unifios",
+  "verify_ssl": false,
+  "api_token": "CHANGE_ME",
+  "cycle_seconds": 5,
+  "aliases": {},
+  "groups": [],
+  "mqtt": {
+    "enabled": true,
+    "base_topic": "unifipoe",
+    "retain": true
+  },
+  "watchdog": {
+    "enabled": false,
+    "publish_every_minutes": 1
+  },
+  "debug": {
+    "level": "debug",
+    "max_bytes": 524288,
+    "backups": 2
+  }
+}
