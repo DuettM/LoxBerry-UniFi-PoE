@@ -14,13 +14,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create GitHub release
+      - name: Fix GitHub release notes
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -euo pipefail
-          gh release view v0.7.5 >/dev/null 2>&1 && exit 0
-          gh release create v0.7.5 releases/LoxBerry-UniFi-PoE-0.7.5.zip \
-            --target main \
-            --title "UniFi PoE Control v0.7.5" \
-            --notes "## UniFi PoE Control 0.7.5\n\n### Neu\n- MQTT auf das zentrale LoxBerry MQTT Gateway umgestellt.\n- Broker-Adresse, Port und Zugangsdaten werden automatisch aus der LoxBerry-Systemkonfiguration gelesen.\n- Standard-Basistopic ist `unifipoe` und bleibt im Webinterface frei konfigurierbar.\n- Bidirektionaler MQTT-Befehlslistener für PoE-Ports und Gruppen.\n- MQTT-Reconnect bei Änderungen der Plugin- oder LoxBerry-MQTT-Konfiguration.\n- Installations- und Upgrade-Migration auf `config_version` 5.\n- Watchdog und Selbsttest an die zentrale MQTT-Konfiguration angepasst.\n\n### Installation\nDie Datei `LoxBerry-UniFi-PoE-0.7.5.zip` kann direkt über die LoxBerry-Pluginverwaltung installiert werden.\n\n### Hinweis\nBestehende Benutzerkonfigurationen und benutzerdefinierte MQTT-Topic-Präfixe bleiben beim Update erhalten."
+          cat > release-notes.md <<'EOF'
+          ## UniFi PoE Control 0.7.5
+
+          ### Neu
+          - MQTT auf das zentrale LoxBerry MQTT Gateway umgestellt.
+          - Broker-Adresse, Port und Zugangsdaten werden automatisch aus der LoxBerry-Systemkonfiguration gelesen.
+          - Standard-Basistopic ist `unifipoe` und bleibt im Webinterface frei konfigurierbar.
+          - Bidirektionaler MQTT-Befehlslistener für PoE-Ports und Gruppen.
+          - MQTT-Reconnect bei Änderungen der Plugin- oder LoxBerry-MQTT-Konfiguration.
+          - Installations- und Upgrade-Migration auf `config_version` 5.
+          - Watchdog und Selbsttest an die zentrale MQTT-Konfiguration angepasst.
+
+          ### Installation
+          Die Datei `LoxBerry-UniFi-PoE-0.7.5.zip` kann direkt über die LoxBerry-Pluginverwaltung installiert werden.
+
+          ### Hinweis
+          Bestehende Benutzerkonfigurationen und benutzerdefinierte MQTT-Topic-Präfixe bleiben beim Update erhalten.
+          EOF
+          gh release edit v0.7.5 --title "UniFi PoE Control v0.7.5" --notes-file release-notes.md
