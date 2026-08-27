@@ -19,7 +19,7 @@
     "availability": true
   },
   "watchdog": {
-    "enabled": false,
+    "enabled": true,
     "publish_every_minutes": 1
   },
   "debug": {
@@ -27,7 +27,7 @@
     "max_bytes": 524288,
     "backups": 2
   },
-  "config_version": 5,
+  "config_version": 6,
   "update": {
     "channel": "stable"
   }

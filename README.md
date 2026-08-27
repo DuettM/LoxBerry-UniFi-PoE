@@ -1,6 +1,6 @@
 # LoxBerry UniFi PoE Control
 
-Aktuelle Version: **0.7.5**
+Aktuelle Version: **0.7.6**
 
 LoxBerry-Plugin zur direkten Steuerung und Überwachung von PoE-Ports auf UniFi-Switches. Das Plugin verbindet LoxBerry/Loxone direkt mit einem UniFi OS Controller bzw. einer UDM und stellt HTTP- sowie MQTT-Schnittstellen für Automatisierungen bereit.
 
@@ -24,6 +24,14 @@ LoxBerry-Plugin zur direkten Steuerung und Überwachung von PoE-Ports auf UniFi-
 - Debug-Log und Diagnosefunktionen
 - update-sichere Benutzerkonfiguration
 - LoxBerry Auto-Update über GitHub
+
+## Neu in 0.7.6: Status und automatische Aktivierung
+
+- MQTT wird beim Upgrade von älteren Plugin-Versionen automatisch aktiviert.
+- Der MQTT-Befehlslistener wird beim Upgrade ebenfalls aktiviert.
+- Eigene MQTT-Basistopics bleiben erhalten.
+- Systemstatus unterscheidet jetzt klar zwischen **Deaktiviert**, **Aktiv · Verbunden** und **Aktiv · Verbindung fehlgeschlagen**.
+- Der Watchdog ist bei Neuinstallationen standardmäßig aktiviert; bestehende Benutzereinstellungen bleiben erhalten.
 
 ## Neu in 0.7.5: LoxBerry MQTT Gateway
 
@@ -75,13 +83,13 @@ Unterstützte Befehle umfassen unter anderem:
 
 Die aktuelle Installationsdatei liegt unter:
 
-`releases/LoxBerry-UniFi-PoE-0.7.5.zip`
+`releases/LoxBerry-UniFi-PoE-0.7.6.zip`
 
 Diese ZIP-Datei kann direkt über die LoxBerry-Pluginverwaltung installiert werden.
 
 ## Auto-Update
 
-Ab Version **0.7.4** ist die LoxBerry-Auto-Update-Funktion aktiviert. Die stabile Version wird über `release.cfg` bereitgestellt. Version **0.7.5** ist aktuell als Stable eingetragen.
+Ab Version **0.7.4** ist die LoxBerry-Auto-Update-Funktion aktiviert. Die stabile Version wird über `release.cfg` bereitgestellt. Version **0.7.6** ist aktuell als Stable eingetragen.
 
 ## Sicherheit
 

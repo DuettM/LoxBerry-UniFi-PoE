@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.6
+
+- MQTT wird beim Upgrade aus älteren Konfigurationen automatisch aktiviert.
+- MQTT-Befehlslistener wird beim Upgrade automatisch aktiviert.
+- Benutzerdefinierte MQTT-Basistopics bleiben erhalten.
+- Systemstatus für MQTT und Watchdog zeigt eindeutige Zustände.
+- Watchdog ist bei Neuinstallationen standardmäßig aktiviert; bestehende Einstellungen werden nicht überschrieben.
+
 ## 0.7.5
 
 - MQTT auf das zentrale LoxBerry MQTT Gateway umgestellt.
