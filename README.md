@@ -1,6 +1,6 @@
 # UniFi PoE Control 0.5.0 für LoxBerry
 
-Direkte lokale Steuerung von UniFi-PoE-Switches aus LoxBerry/Loxone, ohne Node-RED und Homebridge.
+Direkte lokale Steuerung von UniFi-PoE-Switches aus LoxBerry/Loxone
 
 ## Funktionen
 - UniFi OS / UDM / CloudKey und Classic Network Controller
