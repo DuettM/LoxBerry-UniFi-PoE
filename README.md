@@ -14,7 +14,6 @@ Direkte lokale Steuerung von UniFi-PoE-Switches aus LoxBerry/Loxone
 - nicht-destruktiver Selbsttest
 - echtes Debug-Log mit Logrotation, Filter-Level, Auto-Refresh und Löschen
 - responsives LoxBerry-Design
-- Branding `Marco Düthorn · 2026` unten mittig, ohne Wassertropfen
 
 ## Hinweise
 Das Plugin verändert bei einem Schaltvorgang nur `poe_mode` im bestehenden UniFi-Port-Override. Vorhandene Port-/VLAN-Einstellungen bleiben erhalten.
