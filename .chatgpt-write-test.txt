@@ -1,2 +1,0 @@
-Schreibzugriffstest durch ChatGPT am 2026-08-27.
-Diese Datei wird direkt nach erfolgreichem Test wieder entfernt.
