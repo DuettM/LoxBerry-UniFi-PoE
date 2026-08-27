@@ -1,0 +1,109 @@
+name: Build v0.7.6
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-v0.7.6.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch, test, package and release 0.7.6
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          # Version files
+          p=Path('plugin.cfg'); s=p.read_text(); s=s.replace('VERSION=0.7.5','VERSION=0.7.6'); p.write_text(s)
+          for fn in ('release.cfg','prerelease.cfg'):
+              p=Path(fn); s=p.read_text().replace('VERSION=0.7.5','VERSION=0.7.6').replace('LoxBerry-UniFi-PoE-0.7.5.zip','LoxBerry-UniFi-PoE-0.7.6.zip'); p.write_text(s)
+
+          # Defaults: MQTT + listener + watchdog on for fresh installs, schema v6.
+          p=Path('config/config.default.json'); c=json.loads(p.read_text())
+          c.setdefault('mqtt',{})['enabled']=True
+          c['mqtt']['listen_enabled']=True
+          c.setdefault('watchdog',{})['enabled']=True
+          c['config_version']=6
+          p.write_text(json.dumps(c,ensure_ascii=False,indent=2)+'\n')
+
+          # Core version.
+          p=Path('bin/unifipoe.py'); s=p.read_text().replace("VERSION='0.7.5'","VERSION='0.7.6'").replace('VERSION="0.7.5"','VERSION="0.7.6"'); p.write_text(s)
+
+          # Upgrade migration: for pre-v6 configs turn MQTT + command listener on.
+          p=Path('postupgrade.sh'); s=p.read_text()
+          old="mc=c.setdefault('mqtt',{})\noldtopic=str(mc.get('base_topic','') or '').strip().strip('/')"
+          new="mc=c.setdefault('mqtt',{})\nold_version=int(c.get('config_version',0) or 0)\noldtopic=str(mc.get('base_topic','') or '').strip().strip('/')"
+          if old not in s: raise SystemExit('postupgrade anchor 1 missing')
+          s=s.replace(old,new,1)
+          old="mc['use_loxberry']=True\nfor key in ('host','port','username','password'):"
+          new="mc['use_loxberry']=True\n# v0.7.6: older installations are migrated to the central LoxBerry MQTT gateway\n# with MQTT publishing and command listener enabled. Custom base topics are kept.\nif old_version < 6:\n    mc['enabled']=True\n    mc['listen_enabled']=True\nfor key in ('host','port','username','password'):"
+          if old not in s: raise SystemExit('postupgrade anchor 2 missing')
+          s=s.replace(old,new,1)
+          s=s.replace("c['config_version']=5","c['config_version']=6",1)
+          s=s.replace('Plugin auf 0.7.5 aktualisiert','Plugin auf 0.7.6 aktualisiert')
+          p.write_text(s)
+
+          # UI: clearer states instead of generic OK/error.
+          p=Path('webfrontend/htmlauth/index.cgi'); s=p.read_text()
+          old="document.getElementById('sys-mqtt').innerHTML=off?'<span class=\"muted\">Deaktiviert</span>':(mt.ok?'<span class=\"ok\">OK</span>':'<span class=\"bad\">Fehler</span>')"
+          new="document.getElementById('sys-mqtt').innerHTML=off?'<span class=\"muted\">Deaktiviert</span>':(mt.ok?'<span class=\"ok\">Aktiv · Verbunden</span>':'<span class=\"bad\">Aktiv · Verbindung fehlgeschlagen</span>')"
+          if old not in s: raise SystemExit('UI MQTT anchor missing')
+          s=s.replace(old,new,1)
+          s=s.replace("document.getElementById('sys-watchdog').innerHTML=w.ok&&!stale?'<span class=\"ok\">OK</span>':(stale?'<span class=\"warn\">Veraltet</span>':'<span class=\"bad\">Fehler</span>')","document.getElementById('sys-watchdog').innerHTML=w.ok&&!stale?'<span class=\"ok\">Aktiv · OK</span>':(stale?'<span class=\"warn\">Aktiv · Status veraltet</span>':'<span class=\"bad\">Aktiv · Fehler</span>')",1)
+          p.write_text(s)
+
+          # README + changelog
+          p=Path('README.md'); s=p.read_text().replace('Aktuelle Version: **0.7.5**','Aktuelle Version: **0.7.6**',1)
+          s=s.replace('Version **0.7.5** ist aktuell als Stable eingetragen.','Version **0.7.6** ist aktuell als Stable eingetragen.')
+          s=s.replace('releases/LoxBerry-UniFi-PoE-0.7.5.zip','releases/LoxBerry-UniFi-PoE-0.7.6.zip')
+          marker='## Neu in 0.7.5: LoxBerry MQTT Gateway'
+          note='## Neu in 0.7.6: Status und automatische Aktivierung\n\n- MQTT wird beim Upgrade von älteren Plugin-Versionen automatisch aktiviert.\n- Der MQTT-Befehlslistener wird beim Upgrade ebenfalls aktiviert.\n- Eigene MQTT-Basistopics bleiben erhalten.\n- Systemstatus unterscheidet jetzt klar zwischen **Deaktiviert**, **Aktiv · Verbunden** und **Aktiv · Verbindung fehlgeschlagen**.\n- Der Watchdog ist bei Neuinstallationen standardmäßig aktiviert; bestehende Benutzereinstellungen bleiben erhalten.\n\n'
+          if marker in s: s=s.replace(marker,note+marker,1)
+          p.write_text(s)
+
+          p=Path('CHANGELOG.md'); s=p.read_text()
+          entry='# Changelog\n\n## 0.7.6\n\n- MQTT wird beim Upgrade aus älteren Konfigurationen automatisch aktiviert.\n- MQTT-Befehlslistener wird beim Upgrade automatisch aktiviert.\n- Benutzerdefinierte MQTT-Basistopics bleiben erhalten.\n- Systemstatus für MQTT und Watchdog zeigt eindeutige Zustände.\n- Watchdog ist bei Neuinstallationen standardmäßig aktiviert; bestehende Einstellungen werden nicht überschrieben.\n\n'
+          if s.startswith('# Changelog\n'): s=entry+s[len('# Changelog\n\n'):]
+          else: s=entry+s
+          p.write_text(s)
+          PY
+
+          python3 -m py_compile bin/unifipoe.py bin/watchdog.py bin/mqtt_listener.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh cron/cron.01min daemon/daemon uninstall/uninstall.sh
+          rm -rf bin/__pycache__
+          rm -f releases/LoxBerry-UniFi-PoE-0.7.6.zip
+          zip -qr releases/LoxBerry-UniFi-PoE-0.7.6.zip README.md CHANGELOG.md bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
+
+          rm -f .github/workflows/build-v0.7.6.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Release UniFi PoE Control 0.7.6'
+          git push
+
+          cat > /tmp/notes.md <<'EOF'
+          ## UniFi PoE Control 0.7.6
+
+          ### Änderungen
+          - MQTT wird beim Upgrade von älteren Plugin-Versionen automatisch aktiviert.
+          - Der MQTT-Befehlslistener wird ebenfalls automatisch aktiviert.
+          - Eigene MQTT-Basistopics bleiben unverändert.
+          - MQTT-Systemstatus zeigt eindeutig **Deaktiviert**, **Aktiv · Verbunden** oder **Aktiv · Verbindung fehlgeschlagen**.
+          - Watchdog-Systemstatus zeigt eindeutig **Deaktiviert**, **Aktiv · OK**, **Aktiv · Status veraltet** oder **Aktiv · Fehler**.
+          - Bei Neuinstallationen ist der Watchdog standardmäßig aktiviert; bestehende Watchdog-Einstellungen werden beim Update nicht überschrieben.
+
+          ### Installation
+          `LoxBerry-UniFi-PoE-0.7.6.zip` kann direkt über die LoxBerry-Pluginverwaltung installiert werden.
+          EOF
+          gh release create v0.7.6 releases/LoxBerry-UniFi-PoE-0.7.6.zip --target main --title 'UniFi PoE Control v0.7.6' --notes-file /tmp/notes.md
