@@ -1,0 +1,37 @@
+name: Finalize 0.7.5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.upload/index.cgi.gz.b64'
+      - '.github/workflows/finalize-075.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild UI and release package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p webfrontend/htmlauth releases
+          base64 -d .upload/index.cgi.gz.b64 | gzip -d > webfrontend/htmlauth/index.cgi
+          chmod 755 webfrontend/htmlauth/index.cgi bin/*.py postinstall.sh preupgrade.sh postupgrade.sh cron/cron.01min daemon/daemon uninstall/uninstall.sh webfrontend/html/poe.cgi webfrontend/htmlauth/*.cgi
+          test "$(git hash-object webfrontend/htmlauth/index.cgi)" = "f3c2632bd63cf70a45a2258bff3b5e617f032f9a"
+          python3 -m py_compile bin/unifipoe.py bin/watchdog.py bin/mqtt_listener.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh cron/cron.01min daemon/daemon uninstall/uninstall.sh
+          rm -rf bin/__pycache__
+          rm -f releases/LoxBerry-UniFi-PoE-0.7.5.zip
+          zip -qr releases/LoxBerry-UniFi-PoE-0.7.5.zip README.md CHANGELOG.md bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
+          rm -rf .upload
+          rm -f .github/workflows/finalize-075.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build 0.7.5 release archive"
+          git push

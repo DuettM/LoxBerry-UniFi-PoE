@@ -1,0 +1,35 @@
+#!/bin/bash
+# LoxBerry plugin daemon: resolve actual plugin folder, start MQTT listener,
+# return immediately. The listener uses its own flock to prevent duplicates.
+set -u
+if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
+ROOT="${LBHOMEDIR:-${LBHOME:-}}"
+if [ -z "$ROOT" ]; then
+  HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd -P)"
+  ROOT="$(cd "$HERE/../../.." 2>/dev/null && pwd -P)"
+fi
+DB="$ROOT/data/system/plugindatabase.json"
+FOLDER=""
+if [ -r "$DB" ]; then
+  FOLDER="$(python3 - "$DB" <<'PYDB'
+import json,sys
+try:
+ d=json.load(open(sys.argv[1],encoding='utf-8'))
+ for p in d.get('plugins',[]):
+  if p.get('name')=='unifipoe' and p.get('author_email')=='duett86@web.de':
+   print(p.get('folder',''));break
+except Exception: pass
+PYDB
+)"
+fi
+if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
+  FOLDER="$(awk -F'|' '$3=="duett86@web.de" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+fi
+[ -n "$FOLDER" ] || exit 0
+BIN="$ROOT/bin/plugins/$FOLDER"
+CFG="$ROOT/config/plugins/$FOLDER/config.json"
+LOG="$ROOT/log/plugins/$FOLDER/mqtt-daemon.log"
+[ -x "$BIN/mqtt_listener.py" ] && [ -r "$CFG" ] || exit 0
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+"$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/unifipoe.py" >>"$LOG" 2>&1 &
+exit 0

@@ -1,0 +1,34 @@
+#!/bin/bash
+# LoxBerry cron wrapper. Resolve the actual plugin folder from PluginDB;
+# never assume the preferred FOLDER from plugin.cfg.
+set -u
+if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
+ROOT="${LBHOMEDIR:-${LBHOME:-}}"
+if [ -z "$ROOT" ]; then
+  HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd -P)"
+  ROOT="$(cd "$HERE/../../.." 2>/dev/null && pwd -P)"
+fi
+DB="$ROOT/data/system/plugindatabase.json"
+FOLDER=""
+if [ -r "$DB" ]; then
+  FOLDER="$(python3 - "$DB" <<'PYDB'
+import json,sys
+try:
+ d=json.load(open(sys.argv[1],encoding='utf-8'))
+ for p in d.get('plugins',[]):
+  if p.get('name')=='unifipoe' and p.get('author_email')=='duett86@web.de':
+   print(p.get('folder',''));break
+except Exception: pass
+PYDB
+)"
+fi
+# Legacy PluginDB fallback.
+if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
+  FOLDER="$(awk -F'|' '$3=="duett86@web.de" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+fi
+[ -n "$FOLDER" ] || exit 0
+WD="$ROOT/bin/plugins/$FOLDER/watchdog.py"
+CFG="$ROOT/config/plugins/$FOLDER/config.json"
+[ -x "$WD" ] && [ -r "$CFG" ] || exit 0
+"$WD" "$CFG" >/dev/null 2>&1
+exit 0

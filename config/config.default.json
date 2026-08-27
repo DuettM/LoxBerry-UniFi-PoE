@@ -11,8 +11,12 @@
   "groups": [],
   "mqtt": {
     "enabled": true,
+    "use_loxberry": true,
     "base_topic": "unifipoe",
-    "retain": true
+    "retain": true,
+    "listen_enabled": true,
+    "command_qos": 0,
+    "availability": true
   },
   "watchdog": {
     "enabled": false,
@@ -22,5 +26,9 @@
     "level": "debug",
     "max_bytes": 524288,
     "backups": 2
+  },
+  "config_version": 5,
+  "update": {
+    "channel": "stable"
   }
 }
