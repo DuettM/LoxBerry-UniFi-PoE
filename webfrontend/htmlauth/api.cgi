@@ -7,8 +7,17 @@ use LoxBerry::System;
 
 my $q=CGI->new;
 my $cfgfile="$lbpconfigdir/config.json";
-print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n";
+print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n";
 sub out { my ($x)=@_; print encode_json($x); exit; }
+sub reject_cross_site {
+  my $site=lc($ENV{HTTP_SEC_FETCH_SITE}//'');
+  out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}) if $site eq 'cross-site';
+  my $host=lc($ENV{HTTP_HOST}//'');
+  for my $h (qw(HTTP_ORIGIN HTTP_REFERER)) {
+    my $v=lc($ENV{$h}//''); next if $v eq '' || $host eq '';
+    out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}) if $v =~ m{^https?://([^/]+)} && $1 ne $host;
+  }
+}
 sub atomic_json_write {
   my ($path,$obj)=@_;
   my $tmp=$path.'.tmp';
@@ -17,6 +26,7 @@ sub atomic_json_write {
 my $cmd=$q->param('cmd')//'devices';
 my %allowed=map { $_=>1 } qw(devices selftest on off status cycle group-on group-off group-cycle);
 out({ok=>JSON::PP::false,error=>'Ungültiger Befehl.'}) unless $allowed{$cmd};
+reject_cross_site() if $cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/;
 my @args=("$lbpbindir/unifipoe.py",'--config',$cfgfile,$cmd);
 if($cmd =~ /^group-/){ my $g=$q->param('group')//''; out({ok=>JSON::PP::false,error=>'Gruppe fehlt.'}) if $g eq ''; push @args,'--group',$g; }
 elsif($cmd ne 'devices' && $cmd ne 'selftest'){
