@@ -1,0 +1,142 @@
+name: Signed Release v0.7.10
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.release-trigger-0710'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SIGNING_KEY_B64: ${{ secrets.UNIFIPOE_ED25519_PRIVATE_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require signing key
+        run: |
+          set -euo pipefail
+          test -n "${SIGNING_KEY_B64:-}" || { echo 'Missing signing key secret'; exit 1; }
+          printf '%s' "$SIGNING_KEY_B64" | base64 -d > /tmp/unifipoe-signing-key.pem
+          chmod 600 /tmp/unifipoe-signing-key.pem
+      - name: Prepare sources
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          def rep(path, old, new, required=True):
+              p=Path(path); s=p.read_text()
+              if old not in s:
+                  if required: raise SystemExit(f'pattern missing in {path}: {old!r}')
+                  return
+              p.write_text(s.replace(old,new))
+
+          rep('plugin.cfg','VERSION=0.7.9','VERSION=0.7.10')
+          rep('bin/unifipoe.py',"VERSION='0.7.9'","VERSION='0.7.10'")
+
+          # Default configuration: broker credentials are the normal MQTT protection.
+          p=Path('config/config.default.json')
+          c=json.loads(p.read_text())
+          c.setdefault('mqtt',{})['command_token_required']=False
+          c['config_version']=8
+          p.write_text(json.dumps(c,ensure_ascii=False,indent=2)+'\n')
+
+          # Fresh installs: keep a random optional token, but do not require it.
+          p=Path('postinstall.sh'); s=p.read_text()
+          s=s.replace("mc['command_token_required']=True","mc['command_token_required']=False")
+          s=s.replace("c['config_version']=7","c['config_version']=8")
+          s=s.replace('Plugin 0.7.9 installiert','Plugin 0.7.10 installiert')
+          p.write_text(s)
+
+          # Existing 0.7.9 installations: one-time migration back to normal broker auth.
+          p=Path('postupgrade.sh'); s=p.read_text()
+          s=s.replace("mc['command_token_required']=True","# v0.7.10: LoxBerry MQTT broker authentication is the default protection.\nif old_version < 8:\n    mc['command_token_required']=False")
+          # old_version must be known before the migration condition
+          if "old_version=int(c.get('config_version',0) or 0)" in s:
+              s=s.replace("mc=c.setdefault('mqtt',{})\nif not mc.get('command_token')", "mc=c.setdefault('mqtt',{})\nold_version=int(c.get('config_version',0) or 0)\nif not mc.get('command_token')",1)
+              # remove later duplicate
+              s=s.replace("old_version=int(c.get('config_version',0) or 0)\noldtopic=", "oldtopic=",1)
+          s=s.replace("c['config_version']=7","c['config_version']=8")
+          s=s.replace('Plugin auf 0.7.9 aktualisiert','Plugin auf 0.7.10 aktualisiert')
+          p.write_text(s)
+
+          # UI: optional second protection layer, off by default.
+          p=Path('webfrontend/htmlauth/index.cgi'); s=p.read_text()
+          s=s.replace("(($c->{mqtt}{command_token_required}//1)?' checked':'')","(($c->{mqtt}{command_token_required}//0)?' checked':'')")
+          s=s.replace('> MQTT Command-Token erforderlich</label>','> Zusätzlichen MQTT Command-Token verwenden</label>')
+          s=s.replace('Muss bei MQTT-Schaltbefehlen im Payload mitgesendet werden.','Optionaler Zusatzschutz. Normalerweise genügt die Anmeldung am LoxBerry MQTT Broker mit Benutzername und Passwort.')
+          # Generator uses plain payload when optional token protection is disabled.
+          old="pl.textContent=JSON.stringify({token:mt,action:a.toUpperCase()});pw.style.display='block';lab.textContent='MQTT Topic'"
+          new="let req=document.querySelector('[name=\\\"mqtt_command_token_required\\\"]')?.checked;pl.textContent=req?JSON.stringify({token:mt,action:a.toUpperCase()}):a.toUpperCase();pw.style.display='block';lab.textContent='MQTT Topic'"
+          if old in s: s=s.replace(old,new)
+          s=s.replace('MQTT nutzt ein separates Command-Token und automatisch','MQTT nutzt die Zugangsdaten des LoxBerry Brokers; ein zusätzlicher Command-Token ist optional. Automatisch')
+          p.write_text(s)
+
+          # Changelog.
+          p=Path('CHANGELOG.md'); s=p.read_text()
+          note='''## 0.7.10\n\n- MQTT Command-Token ist wieder optional und standardmäßig deaktiviert.\n- LoxBerry MQTT Benutzername/Passwort bleibt die normale Zugriffssicherung.\n- Bestehende 0.7.9-Installationen werden einmalig auf normalen MQTT-Payload (`ON`, `OFF`, `CYCLE`, `STATUS`) zurückgestellt.\n- Optionaler Command-Token bleibt als zusätzliche zweite Schutzschicht verfügbar.\n- Signierter Updatepfad mit SHA-256 + Ed25519 bleibt unverändert aktiv.\n\n'''
+          if '## 0.7.10' not in s: s=s.replace('# Changelog\n\n','# Changelog\n\n'+note)
+          p.write_text(s)
+
+          # Release metadata must be inside the package already.
+          rel='''[AUTOUPDATE]\nVERSION=0.7.10\nARCHIVEURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.10/LoxBerry-UniFi-PoE-0.7.10.zip\nINFOURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/blob/main/CHANGELOG.md\nSHA256URL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.10/LoxBerry-UniFi-PoE-0.7.10.zip.sha256\nSIGURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.10/LoxBerry-UniFi-PoE-0.7.10.zip.sig\n'''
+          Path('release.cfg').write_text(rel)
+          Path('prerelease.cfg').write_text(rel)
+          PY
+
+          python3 -m py_compile bin/unifipoe.py bin/watchdog.py bin/mqtt_listener.py bin/secure_update.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh cron/cron.01min daemon/daemon uninstall/uninstall.sh
+          grep -q 'VERSION=0.7.10' plugin.cfg
+          grep -q '"command_token_required": false' config/config.default.json
+          grep -q "c\['config_version'\]=8" postupgrade.sh
+      - name: Build, hash, sign and verify
+        run: |
+          set -euo pipefail
+          rm -rf bin/__pycache__
+          mkdir -p releases
+          ZIP='releases/LoxBerry-UniFi-PoE-0.7.10.zip'
+          SHA="$ZIP.sha256"
+          SIG="$ZIP.sig"
+          rm -f "$ZIP" "$SHA" "$SIG"
+          zip -qr "$ZIP" README.md CHANGELOG.md bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
+          sha256sum "$ZIP" > "$SHA"
+          openssl pkeyutl -sign -rawin -inkey /tmp/unifipoe-signing-key.pem -in "$ZIP" -out /tmp/unifipoe.sig
+          base64 -w0 /tmp/unifipoe.sig > "$SIG"
+          printf '\n' >> "$SIG"
+          python3 - <<'PY'
+          import base64, importlib.util
+          spec=importlib.util.spec_from_file_location('secure_update','bin/secure_update.py')
+          m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+          blob=open('releases/LoxBerry-UniFi-PoE-0.7.10.zip','rb').read()
+          sig=base64.b64decode(open('releases/LoxBerry-UniFi-PoE-0.7.10.zip.sig','rb').read())
+          assert m.verify_ed25519(sig,blob,bytes.fromhex(m.TRUSTED_PUBLIC_KEY_HEX))
+          PY
+      - name: Publish
+        run: |
+          set -euo pipefail
+          rm -f .release-trigger-0710 .github/workflows/release-signed-0710.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Release signed v0.7.10 with optional MQTT command token'
+          git push
+          cat > /tmp/notes.md <<'EOF'
+          ## UniFi PoE Control 0.7.10
+
+          - MQTT Command-Token ist wieder optional und standardmäßig AUS.
+          - Normale MQTT-Befehle verwenden wieder ON/OFF/CYCLE/STATUS.
+          - LoxBerry MQTT Benutzername/Passwort ist die reguläre Zugangssicherung.
+          - Der zusätzliche Command-Token kann bei Bedarf weiterhin aktiviert werden.
+          - Updates bleiben mit SHA-256 und Ed25519 signiert.
+          EOF
+          gh release create v0.7.10 \
+            releases/LoxBerry-UniFi-PoE-0.7.10.zip \
+            releases/LoxBerry-UniFi-PoE-0.7.10.zip.sha256 \
+            releases/LoxBerry-UniFi-PoE-0.7.10.zip.sig \
+            --target main --title 'UniFi PoE Control v0.7.10' --notes-file /tmp/notes.md
