@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.10
+
+- MQTT Command-Token ist wieder optional und standardmäßig deaktiviert.
+- LoxBerry MQTT Benutzername/Passwort bleibt die normale Zugriffssicherung.
+- Bestehende 0.7.9-Installationen werden einmalig auf normalen MQTT-Payload (`ON`, `OFF`, `CYCLE`, `STATUS`) zurückgestellt.
+- Optionaler Command-Token bleibt als zusätzliche zweite Schutzschicht verfügbar.
+- Signierter Updatepfad mit SHA-256 + Ed25519 bleibt unverändert aktiv.
+
 ## 0.7.9
 
 - Ed25519-Publisher-Signaturen für Update-Archive.

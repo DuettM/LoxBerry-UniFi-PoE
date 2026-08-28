@@ -17,7 +17,7 @@
     "listen_enabled": true,
     "command_qos": 0,
     "availability": true,
-    "command_token_required": true,
+    "command_token_required": false,
     "command_token": "CHANGE_ME"
   },
   "watchdog": {
@@ -29,7 +29,7 @@
     "max_bytes": 524288,
     "backups": 2
   },
-  "config_version": 7,
+  "config_version": 8,
   "update": {
     "channel": "stable",
     "secure_manifest_url": "https://raw.githubusercontent.com/DuettM/LoxBerry-UniFi-PoE/main/release.cfg"
