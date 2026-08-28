@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.12
+
+- Sitzungsgebundener HMAC-CSRF-Schutz für Admin-POSTs.
+- Zusätzliche Eingabevalidierung für Controller, MQTT, Ports, Gruppen und Tokens.
+- Secret-Redaction im Debug-Log für Passwörter, Tokens und Authorization-Header.
+- Debug-Mutationen nur noch per POST.
+
 ## 0.7.11
 
 - LoxBerry-V4-Compliance-Audit gegen das aktuelle SamplePlugin-V4.

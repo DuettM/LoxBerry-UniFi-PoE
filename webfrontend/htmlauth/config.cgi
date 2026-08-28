@@ -5,6 +5,7 @@ use CGI;
 use JSON::PP;
 use LoxBerry::System;
 use File::Temp qw(tempfile);
+use Digest::SHA qw(hmac_sha256_hex);
 
 my $q = CGI->new;
 my $cfgfile = "$lbpconfigdir/config.json";
@@ -18,6 +19,18 @@ sub out {
     exit;
 }
 
+sub ct_eq {
+  my ($a,$b)=@_; return 0 if !defined($a)||!defined($b)||length($a)!=length($b);
+  my $v=0; for(my $i=0;$i<length($a);$i++){ $v |= ord(substr($a,$i,1)) ^ ord(substr($b,$i,1)); } return $v==0;
+}
+sub require_csrf {
+  open my $cf,'<',$cfgfile or out({ok=>JSON::PP::false,error=>'CSRF-Konfiguration nicht lesbar.'});
+  local $/; my $raw=<$cf>//''; close $cf; my $cc; eval{$cc=decode_json($raw);1} or out({ok=>JSON::PP::false,error=>'CSRF-Konfiguration ungültig.'});
+  my $seed=($ENV{HTTP_COOKIE}//'').'|'.($ENV{HTTP_USER_AGENT}//'');
+  my $expected=hmac_sha256_hex($seed,($cc->{api_token}//''));
+  my $sent=$ENV{HTTP_X_UNIFI_CSRF}//'';
+  out({ok=>JSON::PP::false,error=>'CSRF-Prüfung fehlgeschlagen.'}) unless ct_eq($sent,$expected);
+}
 sub reject_cross_site {
     my $site = lc($ENV{HTTP_SEC_FETCH_SITE}//'');
     out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}) if $site eq 'cross-site';
@@ -51,6 +64,16 @@ sub normalize_controller {
     return $v;
 }
 
+sub validate_cfg {
+    my ($cfg)=@_;
+    my $controller=$cfg->{controller}//'';
+    out({ok=>JSON::PP::false,error=>'Controller-URL ungültig.'}) unless $controller =~ m{^https?://[^\s/]+(?::\d{1,5})?(?:/.*)?$}i && length($controller)<=512;
+    out({ok=>JSON::PP::false,error=>'Benutzername ungültig.'}) if !defined($cfg->{username}) || $cfg->{username} eq '' || length($cfg->{username})>128 || $cfg->{username}=~/[\r\n\0]/;
+    my $site=$cfg->{site}//'default'; out({ok=>JSON::PP::false,error=>'Site ungültig.'}) if length($site)>80 || $site=~/[\r\n\0]/;
+    my $cy=int($cfg->{cycle_seconds}//5); out({ok=>JSON::PP::false,error=>'Cycle-Zeit muss zwischen 1 und 120 Sekunden liegen.'}) if $cy<1 || $cy>120;
+    my $api=$cfg->{api_token}//''; out({ok=>JSON::PP::false,error=>'API-Token ungültig.'}) if length($api)<16 || length($api)>256 || $api=~/[\r\n\0]/;
+    my $topic=$cfg->{mqtt}{base_topic}//'unifipoe'; out({ok=>JSON::PP::false,error=>'MQTT Topic ungültig.'}) if length($topic)>128 || $topic=~/[+#\s\0]/;
+}
 sub overlay_from_request {
     my ($cfg, $for_test) = @_;
     my $controller = normalize_controller($q->param('controller'));
@@ -114,8 +137,10 @@ my $cfg = read_cfg();
 
 if ($action eq 'save') {
     reject_cross_site();
+    require_csrf();
     out({ok=>JSON::PP::false,error=>'Speichern ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
     $cfg = overlay_from_request($cfg, 0);
+    validate_cfg($cfg);
     out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};
     out({ok=>JSON::PP::false,error=>'Benutzername fehlt.'}) unless defined($cfg->{username}) && $cfg->{username} ne '';
     out({ok=>JSON::PP::false,error=>'Controller-Typ ungültig.'}) unless ($cfg->{controller_type}//'') =~ /^(?:unifios|classic)$/;
@@ -136,8 +161,10 @@ if ($action eq 'save') {
 
 if ($action eq 'test') {
     reject_cross_site();
+    require_csrf();
     out({ok=>JSON::PP::false,error=>'Verbindungstest ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
     $cfg = overlay_from_request($cfg, 1);
+    validate_cfg($cfg);
     out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};
     out({ok=>JSON::PP::false,error=>'Benutzername fehlt.'}) unless defined($cfg->{username}) && $cfg->{username} ne '';
     out({ok=>JSON::PP::false,error=>'Passwort fehlt. Bitte einmal eingeben oder zuvor speichern.'}) unless defined($cfg->{password}) && $cfg->{password} ne '';
