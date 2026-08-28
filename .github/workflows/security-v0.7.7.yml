@@ -1,0 +1,127 @@
+name: Security v0.7.7
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/security-v0.7.7.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch, test, package and release 0.7.7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new):
+              p=Path(path); s=p.read_text()
+              if old not in s: raise SystemExit(f'pattern not found in {path}: {old[:80]!r}')
+              p.write_text(s.replace(old,new))
+
+          # Version files
+          rep('plugin.cfg','VERSION=0.7.6','VERSION=0.7.7')
+          rep('bin/unifipoe.py',"VERSION='0.7.6'","VERSION='0.7.7'")
+          for fn in ('release.cfg','prerelease.cfg'):
+              p=Path(fn); s=p.read_text().replace('VERSION=0.7.6','VERSION=0.7.7').replace('LoxBerry-UniFi-PoE-0.7.6.zip','LoxBerry-UniFi-PoE-0.7.7.zip'); p.write_text(s)
+
+          # Common cross-site request guard for authenticated CGIs.
+          guard = r'''sub reject_cross_site {
+    my $site = lc($ENV{HTTP_SEC_FETCH_SITE}//'');
+    out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}) if $site eq 'cross-site';
+    my $host = lc($ENV{HTTP_HOST}//'');
+    for my $h (qw(HTTP_ORIGIN HTTP_REFERER)) {
+        my $v = lc($ENV{$h}//''); next if $v eq '' || $host eq '';
+        if ($v =~ m{^https?://([^/]+)} && $1 ne $host) {
+            out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'});
+        }
+    }
+}
+'''
+          p=Path('webfrontend/htmlauth/config.cgi'); s=p.read_text();
+          s=s.replace("sub read_cfg {",guard+"\nsub read_cfg {")
+          s=s.replace("if ($action eq 'save') {\n", "if ($action eq 'save') {\n    reject_cross_site();\n")
+          s=s.replace("if ($action eq 'test') {\n", "if ($action eq 'test') {\n    reject_cross_site();\n")
+          s=s.replace('Cache-Control: no-store\\r\\n\\r\\n','Cache-Control: no-store\\r\\nX-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n')
+          p.write_text(s)
+
+          p=Path('webfrontend/htmlauth/api.cgi'); s=p.read_text();
+          s=s.replace("sub atomic_json_write {",guard+"\nsub atomic_json_write {")
+          s=s.replace("my $cmd=$q->param('cmd')//'devices';", "my $cmd=$q->param('cmd')//'devices';\nreject_cross_site() if $cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/;")
+          s=s.replace('X-Content-Type-Options: nosniff\\r\\n\\r\\n','X-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n')
+          p.write_text(s)
+
+          # debug.cgi has no out() helper; add a simple same-origin guard and POST for destructive action.
+          p=Path('webfrontend/htmlauth/debug.cgi'); s=p.read_text();
+          s=s.replace('print "Content-Type: application/json; charset=utf-8\\r\\nCache-Control: no-store\\r\\n\\r\\n";', 'print "Content-Type: application/json; charset=utf-8\\r\\nCache-Control: no-store\\r\\nX-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n";')
+          insert = r'''sub cross_site {
+  return 1 if lc($ENV{HTTP_SEC_FETCH_SITE}//'') eq 'cross-site';
+  my $host=lc($ENV{HTTP_HOST}//'');
+  for my $h (qw(HTTP_ORIGIN HTTP_REFERER)) { my $v=lc($ENV{$h}//''); next if $v eq '' || $host eq ''; return 1 if $v =~ m{^https?://([^/]+)} && $1 ne $host; }
+  return 0;
+}
+'''
+          s=s.replace('sub read_json_file {',insert+'\nsub read_json_file {')
+          s=s.replace("if($action eq 'watchdog_run'){", "if($action eq 'watchdog_run'){\n  if(cross_site()){ print encode_json({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}); exit; }")
+          s=s.replace("if($action eq 'clear'){", "if($action eq 'clear'){\n  if(cross_site()){ print encode_json({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}); exit; }\n  if(uc($ENV{REQUEST_METHOD}//'GET') ne 'POST'){ print encode_json({ok=>JSON::PP::false,error=>'Log löschen ist nur per POST erlaubt.'}); exit; }")
+          p.write_text(s)
+
+          # Public token API: harden headers, keep Loxone compatibility.
+          p=Path('webfrontend/html/poe.cgi'); s=p.read_text();
+          s=s.replace('print "Content-Type: application/json\\r\\nCache-Control: no-store\\r\\n\\r\\n";', 'print "Content-Type: application/json\\r\\nCache-Control: no-store\\r\\nX-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n";')
+          p.write_text(s)
+
+          # Update UI call for log clearing to POST.
+          p=Path('webfrontend/htmlauth/index.cgi'); s=p.read_text();
+          s=s.replace("await fetch('debug.cgi?action=clear',{cache:'no-store'});", "await fetch('debug.cgi?action=clear',{method:'POST',cache:'no-store'});")
+          p.write_text(s)
+
+          # Changelog
+          p=Path('CHANGELOG.md'); s=p.read_text();
+          note='''## 0.7.7\n\n- Security-Hardening für authentifizierte Web-CGIs gegen Cross-Site-Requests (CSRF).\n- Schaltende Web-API-Aufrufe blockieren explizite Cross-Site-Requests.\n- Debug-Log löschen ist nur noch per POST erlaubt.\n- Zusätzliche `Referrer-Policy: no-referrer` und `X-Content-Type-Options: nosniff` Header.\n- Öffentliche Loxone-Token-API bleibt kompatibel.\n- Sicherheitshinweis: MQTT-Schaltbefehle erfordern weiterhin passende Broker-/ACL-Rechte.\n- Sicherheitshinweis: Bei deaktivierter TLS-Zertifikatsprüfung zum UniFi-Controller besteht MITM-Risiko.\n\n'''
+          if '## 0.7.7' not in s: s=s.replace('# Changelog\n\n','# Changelog\n\n'+note)
+          p.write_text(s)
+          PY
+
+          python3 -m py_compile bin/unifipoe.py bin/watchdog.py bin/mqtt_listener.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh cron/cron.01min daemon/daemon uninstall/uninstall.sh
+          grep -q 'VERSION=0.7.7' plugin.cfg
+          grep -q "VERSION='0.7.7'" bin/unifipoe.py
+          grep -q 'Referrer-Policy: no-referrer' webfrontend/htmlauth/api.cgi
+          grep -q 'Cross-Site-Anfrage blockiert' webfrontend/htmlauth/config.cgi
+
+          rm -rf bin/__pycache__
+          mkdir -p releases
+          rm -f releases/LoxBerry-UniFi-PoE-0.7.7.zip
+          zip -qr releases/LoxBerry-UniFi-PoE-0.7.7.zip README.md CHANGELOG.md bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Security hardening v0.7.7"
+          git push
+
+          cat > /tmp/notes.md <<'EOF'
+          ## UniFi PoE Control 0.7.7
+
+          ### Security-Hardening
+          - Schutz der authentifizierten CGI-Endpunkte vor Cross-Site-Requests (CSRF-Härtung).
+          - Schaltende Web-API-Aufrufe blockieren Cross-Site-Requests.
+          - Debug-Log löschen nur noch per POST.
+          - Zusätzliche Sicherheitsheader (`Referrer-Policy`, `X-Content-Type-Options`).
+          - Loxone-Token-API bleibt kompatibel.
+
+          ### Noch zu beachten
+          - MQTT-Schaltbefehle sind so sicher wie die Rechte/ACLs des LoxBerry MQTT Brokers. Nur vertrauenswürdige Clients sollten auf `unifipoe/set/#` publizieren dürfen.
+          - Wenn `verify_ssl` deaktiviert ist, wird das Zertifikat des UniFi-Controllers nicht geprüft. In vertrauenswürdigen LANs ist das häufig praktisch, sicherer ist eine gültige bzw. vertrauenswürdige Zertifikatskette.
+          EOF
+          gh release create v0.7.7 releases/LoxBerry-UniFi-PoE-0.7.7.zip --target main --title "UniFi PoE Control v0.7.7" --notes-file /tmp/notes.md
