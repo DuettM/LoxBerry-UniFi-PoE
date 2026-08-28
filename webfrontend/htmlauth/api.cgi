@@ -26,7 +26,10 @@ sub atomic_json_write {
 my $cmd=$q->param('cmd')//'devices';
 my %allowed=map { $_=>1 } qw(devices selftest on off status cycle group-on group-off group-cycle);
 out({ok=>JSON::PP::false,error=>'Ungültiger Befehl.'}) unless $allowed{$cmd};
-reject_cross_site() if $cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/;
+if ($cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/) {
+  reject_cross_site();
+  out({ok=>JSON::PP::false,error=>'Schaltbefehle sind nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
+}
 my @args=("$lbpbindir/unifipoe.py",'--config',$cfgfile,$cmd);
 if($cmd =~ /^group-/){ my $g=$q->param('group')//''; out({ok=>JSON::PP::false,error=>'Gruppe fehlt.'}) if $g eq ''; push @args,'--group',$g; }
 elsif($cmd ne 'devices' && $cmd ne 'selftest'){

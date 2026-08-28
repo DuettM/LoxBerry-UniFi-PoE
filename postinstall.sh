@@ -50,7 +50,7 @@ chmod 700 "$PBIN/unifipoe.py" "$PBIN/watchdog.py" "$PBIN/mqtt_listener.py" 2>/de
 chmod 755 "$PHTMLAUTH/index.cgi" "$PHTMLAUTH/config.cgi" "$PHTMLAUTH/debug.cgi" "$PHTMLAUTH/api.cgi" "$PHTML/poe.cgi" 2>/dev/null || true
 chmod 600 "$PCONFIG/config.json" 2>/dev/null || true
 touch "$PLOG/unifipoe.log"; chmod 600 "$PLOG/unifipoe.log" 2>/dev/null || true
-printf "%s [INFO] Plugin 0.7.10 installiert\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
+printf "%s [INFO] Plugin 0.7.11 installiert\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
 
 # Start command receiver and (if enabled) one initial watchdog check.
 nohup "$PBIN/mqtt_listener.py" --config "$PCONFIG/config.json" --core "$PBIN/unifipoe.py" >>"$PLOG/mqtt-daemon.log" 2>&1 &

@@ -31,5 +31,9 @@ CFG="$ROOT/config/plugins/$FOLDER/config.json"
 LOG="$ROOT/log/plugins/$FOLDER/mqtt-daemon.log"
 [ -x "$BIN/mqtt_listener.py" ] && [ -r "$CFG" ] || exit 0
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
-"$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/unifipoe.py" >>"$LOG" 2>&1 &
+if [ "$(id -u)" -eq 0 ] && id loxberry >/dev/null 2>&1; then
+  runuser -u loxberry -- sh -c 'exec "$1" --config "$2" --core "$3" >>"$4" 2>&1' _ "$BIN/mqtt_listener.py" "$CFG" "$BIN/unifipoe.py" "$LOG" &
+else
+  "$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/unifipoe.py" >>"$LOG" 2>&1 &
+fi
 exit 0

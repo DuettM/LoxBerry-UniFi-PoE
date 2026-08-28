@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.11
+
+- LoxBerry-V4-Compliance-Audit gegen das aktuelle SamplePlugin-V4.
+- Tatsächlicher Pluginordner wird für öffentliche API-URLs dynamisch ermittelt (`unifipoe`, `unifipoe01`, ...).
+- Veraltete Token-in-URL-Anzeige aus der Diagnose entfernt; HTTP-Generator zeigt POST-Body.
+- Interne PoE-Schaltbefehle nur noch per POST; reine Statusabfragen bleiben GET.
+- MQTT-Listener läuft nach Boot nicht mehr als root, sondern mit Privilege Drop als Benutzer `loxberry`.
+- Uninstaller beendet nur noch den MQTT-Listener der konkreten Plugininstallation.
+- `.gitattributes` erzwingt LF-Zeilenenden für LoxBerry-Skripte.
+- SHA-256- und Ed25519-signierte Updatekette bleibt unverändert aktiv.
+
 ## 0.7.10
 
 - MQTT Command-Token ist wieder optional und standardmäßig deaktiviert.
