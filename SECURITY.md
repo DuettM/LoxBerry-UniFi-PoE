@@ -4,7 +4,7 @@
 Only the latest published release is actively supported with security fixes unless stated otherwise.
 
 ## Reporting a vulnerability
-Do not publish vulnerabilities, credentials, tokens, private keys, personal data or exploit details in a public issue. Report security problems privately to `duett86@web.de` with affected version, impact, reproducible steps and redacted logs.
+Do not publish vulnerabilities, credentials, tokens, private keys, personal data or exploit details in a public issue. Use GitHub's private vulnerability reporting / Security Advisory feature where available, or contact the repository owner privately through GitHub. Include the affected version, impact, reproducible steps and redacted logs.
 
 ## Responsible testing
 Test only systems, accounts and devices you own or are explicitly authorized to test. Do not bypass access controls, exfiltrate data, perform denial-of-service testing or publish working exploit details before a fix is available.
