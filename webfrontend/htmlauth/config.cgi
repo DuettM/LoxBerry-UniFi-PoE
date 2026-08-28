@@ -10,12 +10,25 @@ my $q = CGI->new;
 my $cfgfile = "$lbpconfigdir/config.json";
 my $json = JSON::PP->new->utf8->pretty->canonical;
 
-print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\n\r\n";
+print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n";
 
 sub out {
     my ($obj) = @_;
     print encode_json($obj);
     exit;
+}
+
+sub reject_cross_site {
+    my $site = lc($ENV{HTTP_SEC_FETCH_SITE}//'');
+    out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}) if $site eq 'cross-site';
+    my $host = lc($ENV{HTTP_HOST}//'');
+    for my $h (qw(HTTP_ORIGIN HTTP_REFERER)) {
+        my $v = lc($ENV{$h}//'');
+        next if $v eq '' || $host eq '';
+        if ($v =~ m{^https?://([^/]+)} && $1 ne $host) {
+            out({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'});
+        }
+    }
 }
 
 sub read_cfg {
@@ -63,8 +76,6 @@ sub overlay_from_request {
         $cfg->{mqtt}{base_topic} = $mtopic;
     }
     $cfg->{mqtt}{use_loxberry} = JSON::PP::true;
-    # Broker host/port/credentials are intentionally NOT stored here. They are
-    # read directly from LoxBerry's config/system/general.json by the backend.
     delete @{$cfg->{mqtt}}{qw(host port username password)};
     $cfg->{mqtt}{enabled} = (($q->param('mqtt_enabled')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
     $cfg->{mqtt}{retain} = (($q->param('mqtt_retain')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
@@ -99,6 +110,7 @@ my $action = $q->param('action') // '';
 my $cfg = read_cfg();
 
 if ($action eq 'save') {
+    reject_cross_site();
     out({ok=>JSON::PP::false,error=>'Speichern ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
     $cfg = overlay_from_request($cfg, 0);
     out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};
@@ -115,12 +127,12 @@ if ($action eq 'save') {
     close $fh;
     rename $tmp, $cfgfile or out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht aktiviert werden: '.$!});
     chmod 0600, $cfgfile;
-    # A settings change may alter controller credentials. Drop the cached UniFi session so the next request logs in exactly once with the new settings.
     for my $sf (qw(unifi_session.cookies unifi_session.json)) { unlink "$lbpdatadir/$sf" if -e "$lbpdatadir/$sf"; }
     out({ok=>JSON::PP::true,message=>'Einstellungen gespeichert. Passwortfelder bleiben aus Sicherheitsgründen leer.'});
 }
 
 if ($action eq 'test') {
+    reject_cross_site();
     out({ok=>JSON::PP::false,error=>'Verbindungstest ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
     $cfg = overlay_from_request($cfg, 1);
     out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};
