@@ -14,25 +14,17 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          skip_names={'plugin.cfg'}
-          skip_parts={'.git'}
           binary_ext={'.zip','.png','.jpg','.jpeg','.gif','.webp','.ico','.sig','.pdf'}
           for p in Path('.').rglob('*'):
-              if not p.is_file() or p.name in skip_names or any(x in p.parts for x in skip_parts) or p.suffix.lower() in binary_ext:
+              if not p.is_file() or p.name=='plugin.cfg' or '.git' in p.parts or p.suffix.lower() in binary_ext:
                   continue
-              try:
-                  s=p.read_text(encoding='utf-8')
-              except (UnicodeDecodeError,OSError):
-                  continue
-              old=s
-              s=s.replace('Düthorn Marco','Project contributors')
-              s=s.replace('Marco Düthorn','Project contributors')
-              s=s.replace('duett86@web.de','GitHub private vulnerability reporting')
-              if s!=old:
-                  p.write_text(s,encoding='utf-8')
+              try:s=p.read_text(encoding='utf-8')
+              except (UnicodeDecodeError,OSError):continue
+              n=s.replace('Düthorn Marco','Project contributors').replace('Marco Düthorn','Project contributors').replace('duett86@web.de','GitHub private vulnerability reporting')
+              if n!=s:p.write_text(n,encoding='utf-8')
           PY
-          if grep -RInE 'Düthorn|duett86@web\.de' . --exclude=plugin.cfg --exclude-dir=.git; then
-            echo 'Personal details still found outside plugin.cfg' >&2
+          if grep -RInE 'Düthorn|duett86@web\.de' . --exclude=plugin.cfg --exclude='*.zip' --exclude='*.png' --exclude='*.jpg' --exclude='*.jpeg' --exclude='*.gif' --exclude='*.webp' --exclude='*.ico' --exclude='*.sig' --exclude='*.pdf' --exclude-dir=.git; then
+            echo 'Personal details still found outside plugin.cfg/binary release archives' >&2
             exit 1
           fi
       - name: Commit cleanup and remove temporary workflow
