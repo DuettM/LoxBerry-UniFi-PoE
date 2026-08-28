@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, json, os, socket, struct, time, random, signal, sys, fcntl, importlib.util
+import argparse, json, os, socket, struct, time, random, signal, sys, fcntl, importlib.util, hmac
 
 RUN=True
 def stop(*_):
@@ -63,19 +63,26 @@ def load_json(p):
 def load_core(path):
     spec=importlib.util.spec_from_file_location('unifipoe_core',path); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
-def payload_action(raw):
-    txt=raw.decode('utf-8','replace').strip()
+def payload_command(raw):
+    txt=raw.decode('utf-8','replace').strip(); token=''
     try:
         obj=json.loads(txt)
-        if isinstance(obj,dict): txt=str(obj.get('action',obj.get('cmd','')))
-    except Exception: pass
+        if isinstance(obj,dict):
+            token=str(obj.get('token','') or '')
+            txt=str(obj.get('action',obj.get('cmd','')))
+    except Exception:
+        if '|' in txt:
+            token,txt=txt.split('|',1)
     a=txt.strip().lower()
-    return {'1':'on','true':'on','ein':'on','on':'on','0':'off','false':'off','aus':'off','off':'off','restart':'cycle','reboot':'cycle','cycle':'cycle','status':'status','get':'status'}.get(a,a)
+    action={'1':'on','true':'on','ein':'on','on':'on','0':'off','false':'off','aus':'off','off':'off','restart':'cycle','reboot':'cycle','cycle':'cycle','status':'status','get':'status'}.get(a,a)
+    return action,token.strip()
 
 def handle(core,cfg,topic,payload):
     base=core.base_topic(cfg); prefix=base+'/set/'
     if not topic.startswith(prefix): return
-    rel=topic[len(prefix):].split('/'); action=payload_action(payload); api=core.UniFi(cfg)
+    rel=topic[len(prefix):].split('/'); action,token=payload_command(payload); mc=cfg.get('mqtt',{}); expected=str(mc.get('command_token','') or '')
+    if mc.get('command_token_required',True) and (not expected or not hmac.compare_digest(token,expected)): raise PermissionError('MQTT Command-Token fehlt oder ist ungültig')
+    api=core.UniFi(cfg)
     if len(rel)>=3 and rel[0]=='port':
         sw=rel[1]; port=int(rel[2])
         if action=='on': r=api.set_poe(sw,port,'auto')

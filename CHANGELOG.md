@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.8
+
+- Loxone API-Token aus der URL entfernt; Authentifizierung über `X-API-Token`, `Authorization: Bearer` oder POST-Body.
+- MQTT-Command-Token eingeführt und bei Updates automatisch zufällig erzeugt.
+- Reine MQTT-ON/OFF/CYCLE-Payloads werden bei aktiviertem Token-Schutz abgewiesen.
+- Native ungeprüfte LoxBerry-Auto-Installation deaktiviert.
+- Neuer `secure_update.py` akzeptiert ein Update-ZIP nur nach erfolgreicher SHA-256-Prüfung gegen das Release-Checksum-Asset.
+- Eine Publisher-Signatur bleibt optional für einen später hinterlegten privaten Signierschlüssel; kein privater Schlüssel wird im Repository gespeichert.
+
 ## 0.7.6
 
 - MQTT wird beim Upgrade aus älteren Konfigurationen automatisch aktiviert.

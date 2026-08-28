@@ -43,6 +43,8 @@ merge(c,d)
 if not c.get('api_token') or c.get('api_token')=='CHANGE_ME': c['api_token']=secrets.token_urlsafe(32)
 # Migrate MQTT to LoxBerry Gateway while preserving genuinely custom topic roots.
 mc=c.setdefault('mqtt',{})
+if not mc.get('command_token') or mc.get('command_token')=='CHANGE_ME': mc['command_token']=secrets.token_urlsafe(32)
+mc['command_token_required']=True
 old_version=int(c.get('config_version',0) or 0)
 oldtopic=str(mc.get('base_topic','') or '').strip().strip('/')
 host=os.uname().nodename.split('.')[0]
@@ -56,13 +58,13 @@ if old_version < 6:
     mc['listen_enabled']=True
 for key in ('host','port','username','password'):
     mc.pop(key,None)
-c['config_version']=6
+c['config_version']=7
 fd,tmp=tempfile.mkstemp(prefix='.config-',dir=os.path.dirname(p),text=True)
 with os.fdopen(fd,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,indent=2); f.write('\n')
 os.chmod(tmp,0o600); os.replace(tmp,p)
 PYMIG
 
-printf "%s [INFO] Plugin auf 0.7.6 aktualisiert; Benutzerkonfiguration erhalten\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
+printf "%s [INFO] Plugin auf 0.7.8 aktualisiert; Benutzerkonfiguration erhalten\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
 rm -f "$PDATA/unifi_session.cookies" "$PDATA/unifi_session.json" 2>/dev/null || true
 nohup "$PBIN/mqtt_listener.py" --config "$PCONFIG/config.json" --core "$PBIN/unifipoe.py" >>"$PLOG/mqtt-daemon.log" 2>&1 &
 # Run watchdog once after upgrade if enabled so the dashboard gets a state immediately.

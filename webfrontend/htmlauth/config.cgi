@@ -80,6 +80,9 @@ sub overlay_from_request {
     $cfg->{mqtt}{enabled} = (($q->param('mqtt_enabled')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
     $cfg->{mqtt}{retain} = (($q->param('mqtt_retain')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
     $cfg->{mqtt}{listen_enabled} = (($q->param('mqtt_listen_enabled')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
+    my $mct = $q->param('mqtt_command_token');
+    $cfg->{mqtt}{command_token} = $mct if defined($mct) && $mct ne '';
+    $cfg->{mqtt}{command_token_required} = (($q->param('mqtt_command_token_required')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
 
     $cfg->{watchdog} ||= {};
     $cfg->{watchdog}{enabled} = (($q->param('watchdog_enabled')//'0') eq '1') ? JSON::PP::true : JSON::PP::false;
@@ -117,7 +120,7 @@ if ($action eq 'save') {
     out({ok=>JSON::PP::false,error=>'Benutzername fehlt.'}) unless defined($cfg->{username}) && $cfg->{username} ne '';
     out({ok=>JSON::PP::false,error=>'Controller-Typ ungültig.'}) unless ($cfg->{controller_type}//'') =~ /^(?:unifios|classic)$/;
     $cfg->{site} = 'default' if !defined($cfg->{site}) || $cfg->{site} eq '';
-    $cfg->{config_version} = 5;
+    $cfg->{config_version} = 7;
     $cfg->{update} ||= { channel => 'stable' };
 
     my $tmp = $cfgfile.'.tmp';
