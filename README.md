@@ -4,9 +4,6 @@ Aktuelle Version: **0.7.6**
 
 LoxBerry-Plugin zur direkten Steuerung und Überwachung von PoE-Ports auf UniFi-Switches. Das Plugin verbindet LoxBerry/Loxone direkt mit einem UniFi OS Controller bzw. einer UDM und stellt HTTP- sowie MQTT-Schnittstellen für Automatisierungen bereit.
 
-**Autor:** Düthorn Marco  
-**Kontakt:** duett86@web.de
-
 ## Funktionen
 
 - PoE **EIN / AUS / Power-Cycle** pro Port
