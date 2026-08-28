@@ -1,0 +1,177 @@
+name: Signed Release v0.7.11
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.release-trigger-0711'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SIGNING_KEY_B64: ${{ secrets.UNIFIPOE_ED25519_PRIVATE_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require signing key
+        run: |
+          set -euo pipefail
+          test -n "${SIGNING_KEY_B64:-}" || { echo 'Missing signing secret'; exit 1; }
+          printf '%s' "$SIGNING_KEY_B64" | base64 -d > /tmp/key.pem
+          chmod 600 /tmp/key.pem
+      - name: Apply LoxBerry V4 compliance fixes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=-1):
+              p=Path(path); s=p.read_text()
+              if old not in s:
+                  raise SystemExit(f'Pattern missing in {path}: {old[:120]!r}')
+              p.write_text(s.replace(old,new,count))
+
+          # Version
+          replace('plugin.cfg','VERSION=0.7.10','VERSION=0.7.11')
+          replace('bin/unifipoe.py',"VERSION='0.7.10'","VERSION='0.7.11'")
+          for fn in ('postinstall.sh','postupgrade.sh'):
+              p=Path(fn); s=p.read_text().replace('0.7.10','0.7.11'); p.write_text(s)
+
+          # Web frontend: derive the actual install folder from the plugin-specific
+          # config directory. This works for unifipoe, unifipoe01, ...
+          p=Path('webfrontend/htmlauth/index.cgi'); s=p.read_text()
+          if 'use File::Basename qw(basename);' not in s:
+              s=s.replace('use LoxBerry::Web;','use LoxBerry::Web;\nuse File::Basename qw(basename);')
+          marker="my $page_js = encode_json($initial_page);"
+          insert=marker+"\nmy $plugin_folder = basename($lbpconfigdir);\nmy $public_api_js = encode_json('/plugins/'.$plugin_folder.'/poe.cgi');"
+          if 'my $public_api_js' not in s:
+              if marker not in s: raise SystemExit('index page marker missing')
+              s=s.replace(marker,insert)
+          old="const API='api.cgi'; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let DEVICES=[]; let CURRENT=0;"
+          new="const API='api.cgi'; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let DEVICES=[]; let CURRENT=0;"
+          if old in s: s=s.replace(old,new)
+          elif 'const PUBLIC_API=' not in s: raise SystemExit('JS constants marker missing')
+
+          old="async function call(q){return jsonFetch(API+'?'+q)}"
+          new="async function call(q,mutate=false){if(mutate)return jsonFetch(API,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:q});return jsonFetch(API+'?'+q)}"
+          if old in s: s=s.replace(old,new)
+          elif 'async function call(q,mutate=false)' not in s: raise SystemExit('call() marker missing')
+
+          # Remove obsolete token-in-query example and use dynamic public path.
+          import re
+          s,n=re.subn(r"function updateApiExample\(d\)\{if\(!d\)return;document\.getElementById\('api-example'\)\.textContent='[^']*'\+TOKEN\+'[^']*'\+encodeURIComponent\(d\.id\)\+'[^']*'\}",
+                      "function updateApiExample(d){if(!d)return;document.getElementById('api-example').textContent=location.origin+PUBLIC_API+'\\nPOST: token='+TOKEN+'&cmd=off&switch='+encodeURIComponent(d.id)+'&port=1'}",s)
+          if n!=1 and 'location.origin+PUBLIC_API' not in s: raise SystemExit('api example pattern missing')
+
+          # Mutating internal requests use POST.
+          s=s.replace("await call('cmd='+cmd+'&switch='+encodeURIComponent(sw)+'&port='+p);","await call('cmd='+cmd+'&switch='+encodeURIComponent(sw)+'&port='+p,true);")
+          s=s.replace("await call('cmd='+cmd+'&switch='+encodeURIComponent(d.id)+'&port='+p.port_idx)","await call('cmd='+cmd+'&switch='+encodeURIComponent(d.id)+'&port='+p.port_idx,true)")
+          s=s.replace("await call('cmd='+cmd+'&group='+g);","await call('cmd='+cmd+'&group='+g,true);")
+
+          # Dynamic public API URL in generator.
+          old="out.textContent=location.origin+'/plugins/unifipoe/poe.cgi';"
+          if old in s: s=s.replace(old,"out.textContent=location.origin+PUBLIC_API;")
+          if "/plugins/unifipoe/poe.cgi" in s: raise SystemExit('hardcoded public plugin URL remains')
+
+          # Copy URL + payload for HTTP too (not only MQTT).
+          old="let mode=document.getElementById('gen-mode')?.value||'http',v=document.getElementById('gen-url').textContent+(mode==='mqtt'?'\\\\nPayload: '+document.getElementById('gen-payload').textContent:''),s=document.getElementById('gen-state');"
+          new="let mode=document.getElementById('gen-mode')?.value||'http',v=document.getElementById('gen-url').textContent+'\\\\nPayload: '+document.getElementById('gen-payload').textContent,s=document.getElementById('gen-state');"
+          if old in s: s=s.replace(old,new)
+          # Generated command test: POST for mutating actions, GET for status.
+          old="let j=await call('cmd='+encodeURIComponent(a)+'&switch='+encodeURIComponent(d.id)+'&port='+encodeURIComponent(p));"
+          new="let j=await call('cmd='+encodeURIComponent(a)+'&switch='+encodeURIComponent(d.id)+'&port='+encodeURIComponent(p),a!=='status');"
+          if old in s: s=s.replace(old,new)
+          p.write_text(s)
+
+          # Internal authenticated API: state-changing operations require POST.
+          p=Path('webfrontend/htmlauth/api.cgi'); s=p.read_text()
+          old="reject_cross_site() if $cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/;"
+          new="if ($cmd =~ /^(?:on|off|cycle|group-on|group-off|group-cycle)$/) {\n  reject_cross_site();\n  out({ok=>JSON::PP::false,error=>'Schaltbefehle sind nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';\n}"
+          if old in s: s=s.replace(old,new)
+          elif 'Schaltbefehle sind nur per POST erlaubt.' not in s: raise SystemExit('api mutation guard marker missing')
+          p.write_text(s)
+
+          # Boot daemon runs as root in LoxBerry. Drop privileges for the long-running listener.
+          p=Path('daemon/daemon'); s=p.read_text()
+          old='''"$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/unifipoe.py" >>"$LOG" 2>&1 &\nexit 0\n'''
+          new='''if [ "$(id -u)" -eq 0 ] && id loxberry >/dev/null 2>&1; then\n  runuser -u loxberry -- sh -c 'exec "$1" --config "$2" --core "$3" >>"$4" 2>&1' _ "$BIN/mqtt_listener.py" "$CFG" "$BIN/unifipoe.py" "$LOG" &\nelse\n  "$BIN/mqtt_listener.py" --config "$CFG" --core "$BIN/unifipoe.py" >>"$LOG" 2>&1 &\nfi\nexit 0\n'''
+          if old not in s: raise SystemExit('daemon start marker missing')
+          p.write_text(s.replace(old,new))
+
+          # Uninstaller: only stop this installation's process; LoxBerry itself removes plugin dirs/cron/daemon.
+          Path('uninstall/uninstall.sh').write_text('''#!/bin/bash\nset -u\nPDIR="${3:-}"\nif [ -n "$PDIR" ] && [ -n "${LBPBIN:-}" ]; then\n  TARGET="$LBPBIN/$PDIR/mqtt_listener.py"\n  pkill -f -- "$TARGET" 2>/dev/null || true\n  echo "<INFO> UniFi PoE MQTT listener for $PDIR stopped."\nfi\nexit 0\n''')
+
+          # Enforce Unix line endings for installer/runtime scripts in future commits.
+          Path('.gitattributes').write_text('''* text=auto\n*.sh text eol=lf\n*.cgi text eol=lf\n*.py text eol=lf\n*.cfg text eol=lf\ndaemon/* text eol=lf\ncron/* text eol=lf\n''')
+
+          # Changelog
+          p=Path('CHANGELOG.md'); s=p.read_text(); note='''## 0.7.11\n\n- LoxBerry-V4-Compliance-Audit gegen das aktuelle SamplePlugin-V4.\n- Tatsächlicher Pluginordner wird für öffentliche API-URLs dynamisch ermittelt (`unifipoe`, `unifipoe01`, ...).\n- Veraltete Token-in-URL-Anzeige aus der Diagnose entfernt; HTTP-Generator zeigt POST-Body.\n- Interne PoE-Schaltbefehle nur noch per POST; reine Statusabfragen bleiben GET.\n- MQTT-Listener läuft nach Boot nicht mehr als root, sondern mit Privilege Drop als Benutzer `loxberry`.\n- Uninstaller beendet nur noch den MQTT-Listener der konkreten Plugininstallation.\n- `.gitattributes` erzwingt LF-Zeilenenden für LoxBerry-Skripte.\n- SHA-256- und Ed25519-signierte Updatekette bleibt unverändert aktiv.\n\n'''
+          if '## 0.7.11' not in s: s=s.replace('# Changelog\n\n','# Changelog\n\n'+note)
+          p.write_text(s)
+          PY
+
+      - name: Validate
+        run: |
+          set -euo pipefail
+          python3 -m py_compile bin/unifipoe.py bin/watchdog.py bin/mqtt_listener.py bin/secure_update.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min uninstall/uninstall.sh
+          grep -q 'VERSION=0.7.11' plugin.cfg
+          grep -q "VERSION='0.7.11'" bin/unifipoe.py
+          grep -q 'runuser -u loxberry' daemon/daemon
+          grep -q "Schaltbefehle sind nur per POST erlaubt" webfrontend/htmlauth/api.cgi
+          grep -q 'const PUBLIC_API=' webfrontend/htmlauth/index.cgi
+          ! grep -q '/plugins/unifipoe/poe.cgi' webfrontend/htmlauth/index.cgi
+          ! grep -q '?token=' webfrontend/htmlauth/index.cgi
+          ! grep -q '/etc/cron.d/loxberry-unifipoe' uninstall/uninstall.sh
+
+      - name: Build, sign, verify and publish
+        run: |
+          set -euo pipefail
+          rm -rf bin/__pycache__
+          mkdir -p releases
+          ZIP='releases/LoxBerry-UniFi-PoE-0.7.11.zip'
+          SHA="$ZIP.sha256"
+          SIG="$ZIP.sig"
+          rm -f "$ZIP" "$SHA" "$SIG"
+          zip -qr "$ZIP" README.md CHANGELOG.md .gitattributes bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
+          sha256sum "$ZIP" > "$SHA"
+          openssl pkeyutl -sign -rawin -inkey /tmp/key.pem -in "$ZIP" -out /tmp/sig
+          base64 -w0 /tmp/sig > "$SIG"; printf '\n' >> "$SIG"
+          python3 - <<'PY'
+          import base64,importlib.util
+          s=importlib.util.spec_from_file_location('u','bin/secure_update.py');m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
+          b=open('releases/LoxBerry-UniFi-PoE-0.7.11.zip','rb').read();sig=base64.b64decode(open('releases/LoxBerry-UniFi-PoE-0.7.11.zip.sig','rb').read())
+          assert m.verify_ed25519(sig,b,bytes.fromhex(m.TRUSTED_PUBLIC_KEY_HEX))
+          PY
+          cat > release.cfg <<'EOF'
+          [AUTOUPDATE]
+          VERSION=0.7.11
+          ARCHIVEURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.11/LoxBerry-UniFi-PoE-0.7.11.zip
+          INFOURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/blob/main/CHANGELOG.md
+          SHA256URL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.11/LoxBerry-UniFi-PoE-0.7.11.zip.sha256
+          SIGURL=https://github.com/DuettM/LoxBerry-UniFi-PoE/releases/download/v0.7.11/LoxBerry-UniFi-PoE-0.7.11.zip.sig
+          EOF
+          cp release.cfg prerelease.cfg
+          rm -f .release-trigger-0711 .github/workflows/release-signed-0711.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'LoxBerry V4 compliance and security hardening v0.7.11'
+          git push
+          cat > /tmp/notes.md <<'EOF'
+          ## UniFi PoE Control 0.7.11
+
+          ### LoxBerry V4 Compliance
+          - Dynamischer tatsächlicher Pluginordner für öffentliche API-URLs.
+          - Interne Schaltbefehle nur per POST.
+          - MQTT-Daemon mit Privilege Drop auf Benutzer loxberry.
+          - Präziser, installationsbezogener Uninstall-Cleanup.
+          - Veraltete Token-in-URL-Anzeige entfernt.
+          - LF-Zeilenenden für LoxBerry-Skripte festgelegt.
+          - Release weiterhin SHA-256 + Ed25519 signiert.
+          EOF
+          gh release create v0.7.11 "$ZIP" "$SHA" "$SIG" --target main --title 'UniFi PoE Control v0.7.11' --notes-file /tmp/notes.md
