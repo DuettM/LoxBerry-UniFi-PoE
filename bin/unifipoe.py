@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import argparse, json, ssl, sys, time, urllib.request, urllib.error, http.cookiejar, socket, struct, random, os, tempfile, urllib.parse, fcntl, hashlib
 
-VERSION='0.7.6'
+VERSION='0.7.7'
 class UniFiError(RuntimeError):
     def __init__(self, message, status=None, code='', retry_after=None):
         super().__init__(message); self.status=status; self.code=code or ''; self.retry_after=retry_after
