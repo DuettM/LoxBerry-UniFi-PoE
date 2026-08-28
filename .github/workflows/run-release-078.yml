@@ -12,7 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Patch sources
-        run: python3 tools/release_078.py
+        run: |
+          python3 tools/fix_release_078.py
+          python3 tools/release_078.py
       - name: Validate
         run: |
           chmod 755 bin/secure_update.py webfrontend/html/poe.cgi
@@ -23,6 +25,7 @@ jobs:
           grep -q 'AUTOMATIC_UPDATES=false' plugin.cfg
           grep -q 'command_token_required' bin/mqtt_listener.py
           grep -q 'HTTP_X_API_TOKEN' webfrontend/html/poe.cgi
+          grep -q 'MQTT Command-Token' webfrontend/htmlauth/index.cgi
       - name: Package and publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,7 +36,7 @@ jobs:
           rm -f releases/LoxBerry-UniFi-PoE-0.7.8.zip releases/LoxBerry-UniFi-PoE-0.7.8.zip.sha256
           zip -qr releases/LoxBerry-UniFi-PoE-0.7.8.zip README.md CHANGELOG.md bin config cron daemon icons plugin.cfg postinstall.sh postupgrade.sh preupgrade.sh prerelease.cfg release.cfg uninstall webfrontend
           sha256sum releases/LoxBerry-UniFi-PoE-0.7.8.zip > releases/LoxBerry-UniFi-PoE-0.7.8.zip.sha256
-          rm -f tools/release_078.py .github/workflows/run-release-078.yml .github/workflows/release-v0.7.8.yml
+          rm -f tools/release_078.py tools/fix_release_078.py .github/workflows/run-release-078.yml .github/workflows/release-v0.7.8.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
