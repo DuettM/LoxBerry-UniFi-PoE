@@ -1,7 +1,13 @@
 #!/usr/bin/perl
 use strict; use warnings; use CGI; use JSON::PP; use LoxBerry::System;
 my $q=CGI->new; my $log="$lbplogdir/unifipoe.log"; my $action=$q->param('action')//'read';
-print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\n\r\n";
+print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n";
+sub cross_site {
+  return 1 if lc($ENV{HTTP_SEC_FETCH_SITE}//'') eq 'cross-site';
+  my $host=lc($ENV{HTTP_HOST}//'');
+  for my $h (qw(HTTP_ORIGIN HTTP_REFERER)) { my $v=lc($ENV{$h}//''); next if $v eq '' || $host eq ''; return 1 if $v =~ m{^https?://([^/]+)} && $1 ne $host; }
+  return 0;
+}
 sub read_json_file {
   my ($path)=@_; my $data={};
   if(open my $f,'<',$path){ local $/; my $raw=<$f>//''; close $f; eval{$data=decode_json($raw);1} or $data={}; }
@@ -18,6 +24,7 @@ if($action eq 'selftest'){
   print encode_json({ok=>JSON::PP::true,exists=>(-f $st?JSON::PP::true:JSON::PP::false),selftest=>$data}); exit;
 }
 if($action eq 'watchdog_run'){
+  if(cross_site()){ print encode_json({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}); exit; }
   my $cfg=read_json_file("$lbpconfigdir/config.json");
   my $enabled=($cfg->{watchdog} && $cfg->{watchdog}{enabled}) ? 1 : 0;
   if(!$enabled){ print encode_json({ok=>JSON::PP::true,started=>JSON::PP::false,reason=>'disabled'}); exit; }
@@ -30,6 +37,7 @@ if($action eq 'watchdog_run'){
   print encode_json({ok=>JSON::PP::true,started=>JSON::PP::true}); exit;
 }
 if($action eq 'clear'){
+  if(cross_site()){ print encode_json({ok=>JSON::PP::false,error=>'Cross-Site-Anfrage blockiert.'}); exit; }
   if(open my $f,'>',$log){ close $f; print encode_json({ok=>JSON::PP::true}); }
   else{ print encode_json({ok=>JSON::PP::false,error=>"$!"}); }
   exit;
