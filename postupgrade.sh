@@ -64,7 +64,7 @@ with os.fdopen(fd,'w',encoding='utf-8') as f: json.dump(c,f,ensure_ascii=False,i
 os.chmod(tmp,0o600); os.replace(tmp,p)
 PYMIG
 
-printf "%s [INFO] Plugin auf 0.7.8 aktualisiert; Benutzerkonfiguration erhalten\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
+printf "%s [INFO] Plugin auf 0.7.9 aktualisiert; Benutzerkonfiguration erhalten\n" "$(date "+%Y-%m-%d %H:%M:%S")" >> "$PLOG/unifipoe.log" 2>/dev/null || true
 rm -f "$PDATA/unifi_session.cookies" "$PDATA/unifi_session.json" 2>/dev/null || true
 nohup "$PBIN/mqtt_listener.py" --config "$PCONFIG/config.json" --core "$PBIN/unifipoe.py" >>"$PLOG/mqtt-daemon.log" 2>&1 &
 # Run watchdog once after upgrade if enabled so the dashboard gets a state immediately.

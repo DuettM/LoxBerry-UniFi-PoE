@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.9
+
+- Ed25519-Publisher-Signaturen für Update-Archive.
+- Secure Updater verlangt SHA-256 **und** gültige Ed25519-Signatur.
+- Öffentlicher Vertrauensschlüssel ist fest im Plugin eingebettet.
+- Manipulierte oder nur neu gehashte Fremdarchive werden verworfen.
+
 ## 0.7.8
 
 - Loxone API-Token aus der URL entfernt; Authentifizierung über `X-API-Token`, `Authorization: Bearer` oder POST-Body.
