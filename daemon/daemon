@@ -16,14 +16,14 @@ import json,sys
 try:
  d=json.load(open(sys.argv[1],encoding='utf-8'))
  for p in d.get('plugins',[]):
-  if p.get('name')=='unifipoe' and p.get('author_email')=='duett86@web.de':
+  if p.get('name')=='unifipoe' and p.get('author_email')=='GitHub private vulnerability reporting':
    print(p.get('folder',''));break
 except Exception: pass
 PYDB
 )"
 fi
 if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
-  FOLDER="$(awk -F'|' '$3=="duett86@web.de" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+  FOLDER="$(awk -F'|' '$3=="GitHub private vulnerability reporting" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
 fi
 [ -n "$FOLDER" ] || exit 0
 BIN="$ROOT/bin/plugins/$FOLDER"

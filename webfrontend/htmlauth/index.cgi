@@ -150,7 +150,7 @@ print <<'DIAG';
 <section id="page-debug" class="page"><div class="card"><h2>▤ Debug-Log</h2><div class="body"><div class="debug-controls"><select id="log-lines" onchange="loadLog()"><option>50</option><option selected>100</option><option>250</option><option>500</option></select><button class="btn" onclick="loadLog()">↻ Aktualisieren</button><button class="btn btn-red" onclick="clearLog()">Log leeren</button><label style="margin-left:auto"><input type="checkbox" id="auto-log" checked> Auto-Refresh</label></div><div id="debugbox" class="debugbox"></div></div></div></section>
 DIAG
 
-print '<div class="footer">Düthorn Marco &nbsp;·&nbsp; 2026</div></div></div></div>';
+print '<div class="footer">Project contributors &nbsp;·&nbsp; 2026</div></div></div></div>';
 
 print qq~<script>
 const API='api.cgi'; const CSRF=$csrf_js; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let DEVICES=[]; let CURRENT=0;
