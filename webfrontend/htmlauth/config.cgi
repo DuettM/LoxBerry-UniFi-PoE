@@ -11,16 +11,14 @@ my $q = CGI->new;
 my $cfgfile = "$lbpconfigdir/config.json";
 my $json = JSON::PP->new->utf8->pretty->canonical;
 
-print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n";
-
-sub out { my ($obj)=@_; print encode_json($obj); exit; }
+sub out { my ($obj)=@_; print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n"; print encode_json($obj); exit; }
 sub ct_eq { my ($a,$b)=@_; return 0 if !defined($a)||!defined($b)||length($a)!=length($b); my $v=0; for(my $i=0;$i<length($a);$i++){ $v |= ord(substr($a,$i,1)) ^ ord(substr($b,$i,1)); } return $v==0; }
 sub require_csrf {
   open my $cf,'<',$cfgfile or out({ok=>JSON::PP::false,error=>'CSRF-Konfiguration nicht lesbar.'});
   local $/; my $raw=<$cf>//''; close $cf; my $cc; eval{$cc=decode_json($raw);1} or out({ok=>JSON::PP::false,error=>'CSRF-Konfiguration ungültig.'});
   my $seed=($ENV{HTTP_COOKIE}//'').'|'.($ENV{HTTP_USER_AGENT}//'');
   my $expected=hmac_sha256_hex($seed,($cc->{api_token}//''));
-  my $sent=$ENV{HTTP_X_UNIFI_CSRF}//'';
+  my $sent=$ENV{HTTP_X_UNIFI_CSRF}//''; $sent=$q->param('csrf')//'' if $sent eq '';
   out({ok=>JSON::PP::false,error=>'CSRF-Prüfung fehlgeschlagen.'}) unless ct_eq($sent,$expected);
 }
 sub reject_cross_site {
@@ -87,6 +85,7 @@ if($action eq 'save'){
   out({ok=>JSON::PP::false,error=>'Controller-Adresse konnte nicht dauerhaft gespeichert werden.'}) unless defined($check->{controller})&&$check->{controller} eq $expected_controller;
   out({ok=>JSON::PP::false,error=>'Passwort konnte nicht dauerhaft gespeichert werden.'}) if $had_password && (!defined($check->{password})||$check->{password} eq '');
   for my $sf(qw(unifi_session.cookies unifi_session.json)){unlink "$lbpdatadir/$sf" if -e "$lbpdatadir/$sf";}
+  if (($q->param('native')//'0') eq '1') { print "Status: 303 See Other\r\nLocation: index.cgi?page=settings&saved=1\r\nCache-Control: no-store\r\n\r\n"; exit; }
   out({ok=>JSON::PP::true,message=>'Einstellungen dauerhaft gespeichert.',username=>$check->{username},controller=>$check->{controller},password_saved=>((defined($check->{password})&&$check->{password} ne '')?JSON::PP::true:JSON::PP::false),config_version=>$check->{config_version}});
 }
 if($action eq 'test'){
