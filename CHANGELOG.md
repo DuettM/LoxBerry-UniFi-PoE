@@ -1,3 +1,9 @@
+## 0.7.23
+- Logging: erfolgreicher Selbsttest wird auf INFO protokolliert.
+- Logging: Watchdog schreibt beim Start/Wechsel auf OK einen INFO-Eintrag, zyklische OK-Läufe bleiben DEBUG.
+- Logging: PoE-Schaltungen, Warnungen und Fehler bleiben sichtbar, ohne das Log mit 30-Sekunden-Abfragen zu füllen.
+- Intern: Backend-Version auf 0.7.23 aktualisiert.
+
 ## 0.7.22
 - Fix: Dashboard Systemtest/Watchdog use api.cgi health endpoint instead of debug.cgi.
 - Fix: Watchdog kick uses authenticated POST.

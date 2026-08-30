@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import argparse, json, ssl, sys, time, urllib.request, urllib.error, http.cookiejar, socket, struct, random, os, tempfile, urllib.parse, fcntl, hashlib
 
-VERSION='0.7.12'
+VERSION='0.7.23'
 class UniFiError(RuntimeError):
     def __init__(self, message, status=None, code='', retry_after=None):
         super().__init__(message); self.status=status; self.code=code or ''; self.retry_after=retry_after
@@ -470,7 +470,10 @@ def main():
     debug_log(cfg,'debug',f'Backend command={a.cmd}')
     try:
         if a.cmd=='devices':print(json.dumps(u.list_devices(),ensure_ascii=False))
-        elif a.cmd=='selftest':print(json.dumps(safe_selftest(cfg,a.config),ensure_ascii=False))
+        elif a.cmd=='selftest':
+            r=safe_selftest(cfg,a.config)
+            debug_log(cfg,'info',f"Selbsttest {'OK' if r.get('ok') else 'FEHLER'}: {len(r.get('tests',[]))} Prüfungen")
+            print(json.dumps(r,ensure_ascii=False))
         elif a.cmd=='on':print(json.dumps(u.set_poe(a.switch,a.port,'auto'),ensure_ascii=False))
         elif a.cmd=='off':print(json.dumps(u.set_poe(a.switch,a.port,'off'),ensure_ascii=False))
         elif a.cmd=='status':print(json.dumps(u.status(a.switch,a.port),ensure_ascii=False))

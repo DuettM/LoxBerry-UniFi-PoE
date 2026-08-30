@@ -98,7 +98,12 @@ if data:
                     if r.get(k) is not None:mod.mqtt_publish(c,f'{root}/{k}',('1' if r[k] is True else '0' if r[k] is False else r[k]))
             except Exception:pass
     state={'ok':True,'timestamp':int(time.time()),'last_success':int(time.time()),'consecutive_failures':0,'response_ms':int((time.time()-start)*1000),'switches':len(data.get('devices',[])),'ports':sum(len(d.get('ports',[])) for d in data.get('devices',[])),'error':'','auth_failure':False,'rate_limited':False,'config_mtime':config_mtime}
-    atomic_write(state);publish_health(mod,state);mod.debug_log(c,'debug',f"Watchdog OK: {state['switches']} Switch(es), {state['ports']} Ports, {state['response_ms']} ms");sys.exit(0)
+    atomic_write(state);publish_health(mod,state)
+    if old.get('ok') is not True:
+        mod.debug_log(c,'info',f"Watchdog OK: {state['switches']} Switch(es), {state['ports']} Ports, {state['response_ms']} ms")
+    else:
+        mod.debug_log(c,'debug',f"Watchdog OK: {state['switches']} Switch(es), {state['ports']} Ports, {state['response_ms']} ms")
+    sys.exit(0)
 else:
     state={'ok':False,'timestamp':int(time.time()),'last_success':old.get('last_success',0),'consecutive_failures':int(old.get('consecutive_failures',0))+1,'response_ms':int((time.time()-start)*1000),'switches':old.get('switches',0),'ports':old.get('ports',0),'error':last_error[:800],'auth_failure':is_auth_error(last_error),'rate_limited':is_rate_limit(last_error),'config_mtime':config_mtime}
     atomic_write(state);publish_health(mod,state);mod.debug_log(c,'error',f"Watchdog failed: {last_error}");sys.exit(2)
