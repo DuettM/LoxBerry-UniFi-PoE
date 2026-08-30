@@ -64,8 +64,15 @@ sub overlay_from_request {
   my $groups=$q->param('groups_json'); if(defined $groups){my $v;eval{$v=decode_json($groups);1} or out({ok=>JSON::PP::false,error=>'Gruppen enthalten ungültiges JSON.'});out({ok=>JSON::PP::false,error=>'Gruppen müssen ein JSON-Array sein.'}) unless ref($v) eq 'ARRAY';$cfg->{groups}=$v;}
   return $cfg;
 }
-sub write_cfg_atomic {
-  my($cfg)=@_; my($fh,$tmp)=tempfile('.config-XXXXXX',DIR=>$lbpconfigdir,UNLINK=>0); chmod 0600,$tmp; print $fh $json->encode($cfg); close $fh or out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht geschrieben werden.'}); rename $tmp,$cfgfile or do{unlink $tmp;out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht aktiviert werden: '.$!});}; chmod 0600,$cfgfile;
+sub write_cfg_proven {
+  my($cfg)=@_;
+  my $tmp=$cfgfile.'.tmp';
+  open my $fh,'>',$tmp or out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht geschrieben werden: '.$!});
+  chmod 0600,$tmp;
+  print $fh $json->encode($cfg);
+  close $fh or do { unlink $tmp; out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht vollständig geschrieben werden.'}); };
+  rename $tmp,$cfgfile or do { unlink $tmp; out({ok=>JSON::PP::false,error=>'Konfiguration konnte nicht aktiviert werden: '.$!}); };
+  chmod 0600,$cfgfile;
 }
 
 my $action=$q->param('action')//''; my $cfg=read_cfg();
@@ -73,9 +80,14 @@ if($action eq 'save'){
   reject_cross_site();require_csrf();out({ok=>JSON::PP::false,error=>'Speichern ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
   $cfg=overlay_from_request($cfg,0);validate_cfg($cfg);out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};out({ok=>JSON::PP::false,error=>'Benutzername fehlt.'}) unless defined($cfg->{username})&&$cfg->{username} ne '';out({ok=>JSON::PP::false,error=>'Controller-Typ ungültig.'}) unless ($cfg->{controller_type}//'')=~/^(?:unifios|classic)$/;
   $cfg->{site}='default' if !defined($cfg->{site})||$cfg->{site} eq ''; $cfg->{config_version}=8; $cfg->{update}||={channel=>'stable'};
-  my $expected_username=$cfg->{username}; write_cfg_atomic($cfg); my $check=read_cfg(); out({ok=>JSON::PP::false,error=>'Benutzername konnte nicht dauerhaft gespeichert werden.'}) unless defined($check->{username})&&$check->{username} eq $expected_username;
+  my $expected_username=$cfg->{username}; my $expected_controller=$cfg->{controller}; my $had_password=defined($cfg->{password})&&$cfg->{password} ne '';
+  write_cfg_proven($cfg);
+  my $check=read_cfg();
+  out({ok=>JSON::PP::false,error=>'Benutzername konnte nicht dauerhaft gespeichert werden.'}) unless defined($check->{username})&&$check->{username} eq $expected_username;
+  out({ok=>JSON::PP::false,error=>'Controller-Adresse konnte nicht dauerhaft gespeichert werden.'}) unless defined($check->{controller})&&$check->{controller} eq $expected_controller;
+  out({ok=>JSON::PP::false,error=>'Passwort konnte nicht dauerhaft gespeichert werden.'}) if $had_password && (!defined($check->{password})||$check->{password} eq '');
   for my $sf(qw(unifi_session.cookies unifi_session.json)){unlink "$lbpdatadir/$sf" if -e "$lbpdatadir/$sf";}
-  out({ok=>JSON::PP::true,message=>'Einstellungen gespeichert.',username=>$check->{username},config_version=>$check->{config_version}});
+  out({ok=>JSON::PP::true,message=>'Einstellungen dauerhaft gespeichert.',username=>$check->{username},controller=>$check->{controller},password_saved=>((defined($check->{password})&&$check->{password} ne '')?JSON::PP::true:JSON::PP::false),config_version=>$check->{config_version}});
 }
 if($action eq 'test'){
   reject_cross_site();require_csrf();out({ok=>JSON::PP::false,error=>'Verbindungstest ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
