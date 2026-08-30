@@ -1,0 +1,45 @@
+name: Publish UniFi PoE v0.7.23
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-v0723.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-build
+          gh run download 33319849533 --repo "$GITHUB_REPOSITORY" --name unifipoe-0.7.23-package --dir release-build
+          test -f release-build/LoxBerry-UniFi-PoE-0.7.23.zip
+      - name: Verify SHA-256 and Ed25519 signature
+        run: |
+          set -euo pipefail
+          cp release-assets/v0.7.23/LoxBerry-UniFi-PoE-0.7.23.zip.sha256 release-build/
+          cp release-assets/v0.7.23/LoxBerry-UniFi-PoE-0.7.23.zip.sig release-build/
+          cd release-build
+          sha256sum -c LoxBerry-UniFi-PoE-0.7.23.zip.sha256
+          printf '302a300506032b6570032100e9a33e9c989020db24130fe7d5f3079517074ce54313dbc27fd730e6a21ebfc2' | xxd -r -p > public.der
+          openssl pkey -pubin -inform DER -in public.der -out public.pem
+          base64 -d LoxBerry-UniFi-PoE-0.7.23.zip.sig > signature.bin
+          openssl pkeyutl -verify -pubin -inkey public.pem -rawin -in LoxBerry-UniFi-PoE-0.7.23.zip -sigfile signature.bin
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create v0.7.23 \
+            release-build/LoxBerry-UniFi-PoE-0.7.23.zip \
+            release-build/LoxBerry-UniFi-PoE-0.7.23.zip.sha256 \
+            release-build/LoxBerry-UniFi-PoE-0.7.23.zip.sig \
+            --repo "$GITHUB_REPOSITORY" \
+            --target main \
+            --title 'UniFi PoE v0.7.23' \
+            --notes 'Test release: Dashboard health fixes, visual port/group editor, reliable config saving and improved INFO logging for self-test, watchdog state changes, PoE actions, warnings and errors.'
