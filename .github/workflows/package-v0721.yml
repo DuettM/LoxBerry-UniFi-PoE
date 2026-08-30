@@ -1,0 +1,67 @@
+name: Package UniFi PoE v0.7.21
+on:
+  push:
+    paths:
+      - '.github/workflows/package-v0721.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate sources
+        run: |
+          set -euo pipefail
+          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.21"
+          grep -q '^NAME=Düthorn Marco$' plugin.cfg
+          grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
+          grep -q '^VERSION=0.7.21$' release.cfg
+          grep -q '^VERSION=0.7.21$' prerelease.cfg
+          grep -Fq 'my $cfgfile="$lbpconfigdir/config.json"' webfrontend/htmlauth/debug.cgi
+          grep -Fq "action eq 'save_groups'" webfrontend/htmlauth/config.cgi
+          grep -Fq 'group-port-check' webfrontend/htmlauth/index.cgi
+          grep -Fq 'Gruppe speichern' webfrontend/htmlauth/index.cgi
+          grep -Fq 'Portnamen &amp; Gruppen' webfrontend/htmlauth/index.cgi && { echo 'Raw group JSON card still present'; exit 1; } || true
+          python3 -m py_compile bin/*.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('webfrontend/htmlauth/index.cgi').read_text()
+          a=s.find('print qq~<script>')
+          b=s.find('</script>',a)
+          if a<0 or b<0: raise SystemExit('script block not found')
+          js=s[a+len('print qq~<script>'):b]
+          for k,v in {
+              '$csrf_js':'"csrf"', '$public_api_js':'"/plugins/unifipoe/poe.cgi"',
+              '$token_js':'"token"', '$page_js':'"overview"', '$groups_js':'[]', '$aliases_js':'{}'
+          }.items(): js=js.replace(k,v)
+          Path('/tmp/unifipoe-ui.js').write_text(js)
+          PY
+          node --check /tmp/unifipoe-ui.js
+          if grep -R -n --exclude='plugin.cfg' --exclude-dir='.git' --exclude-dir='releases' --exclude-dir='.github' -E 'GitHub private vulnerability reporting' .; then
+            echo 'Broken privacy-cleanup placeholder found'; exit 1
+          fi
+      - name: Build deterministic ZIP
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/unifipoe-stage dist
+          mkdir -p /tmp/unifipoe-stage dist
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'dist/' \
+            --exclude 'releases/' \
+            --exclude 'release-signatures/' \
+            --exclude '__pycache__/' \
+            ./ /tmp/unifipoe-stage/
+          find /tmp/unifipoe-stage -type f -exec touch -t 202608300000 {} +
+          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.21.zip")
+          sha256sum dist/LoxBerry-UniFi-PoE-0.7.21.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unifipoe-0.7.21-package
+          path: dist/LoxBerry-UniFi-PoE-0.7.21.zip
+          retention-days: 7
+          if-no-files-found: error
