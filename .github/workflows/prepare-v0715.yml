@@ -1,0 +1,35 @@
+name: Prepare UniFi PoE v0.7.15
+on:
+  push:
+    paths:
+      - '.github/workflows/prepare-v0715.yml'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update version metadata
+        run: |
+          set -euo pipefail
+          sed -i '0,/^VERSION=0\.7\.14$/s//VERSION=0.7.15/' plugin.cfg
+          for f in release.cfg prerelease.cfg; do
+            sed -i 's/^VERSION=.*/VERSION=0.7.15/' "$f"
+            sed -i 's/v0\.7\.14/v0.7.15/g' "$f"
+            sed -i 's/LoxBerry-UniFi-PoE-0\.7\.14/LoxBerry-UniFi-PoE-0.7.15/g' "$f"
+          done
+          python3 - <<'PY'
+from pathlib import Path
+p=Path('CHANGELOG.md')
+s=p.read_text(encoding='utf-8')
+entry='''## 0.7.15\n\n- Bevorzugt bei versehentlichen Doppelinstallationen den ursprünglichen Plugin-Ordner `unifipoe` vor Suffix-Installationen wie `unifipoe01`.\n- Daemon und Watchdog verwenden dadurch wieder dieselbe Konfiguration wie die ursprüngliche Installation.\n- Verhindert, dass gespeicherte UniFi-Zugangsdaten scheinbar verschwinden, weil ein anderer Plugin-Ordner verwendet wird.\n\n'''
+if '## 0.7.15' not in s:
+    s=s.replace('# Changelog\n\n','# Changelog\n\n'+entry,1)
+p.write_text(s,encoding='utf-8')
+PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add plugin.cfg release.cfg prerelease.cfg CHANGELOG.md
+          git commit -m 'Prepare UniFi PoE v0.7.15' || exit 0
+          git push
