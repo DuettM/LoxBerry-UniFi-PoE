@@ -1,4 +1,4 @@
-name: Package UniFi PoE v0.7.17
+name: Package UniFi PoE v0.7.18
 on:
   push:
     paths:
@@ -14,13 +14,15 @@ jobs:
       - name: Validate sources
         run: |
           set -euo pipefail
-          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.17"
+          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.18"
           grep -q '^NAME=Düthorn Marco$' plugin.cfg
           grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
-          grep -q '^VERSION=0.7.17$' release.cfg
-          grep -q '^VERSION=0.7.17$' prerelease.cfg
+          grep -q '^VERSION=0.7.18$' release.cfg
+          grep -q '^VERSION=0.7.18$' prerelease.cfg
           grep -q 'config_version}=8' webfrontend/htmlauth/config.cgi
           grep -Fq 'my $tmp=$cfgfile' webfrontend/htmlauth/config.cgi
+          grep -Fq 'application/x-www-form-urlencoded;charset=UTF-8' webfrontend/htmlauth/index.cgi
+          grep -Fq "fd.set(id,el.value||'')" webfrontend/htmlauth/index.cgi
           test -f webfrontend/htmlauth/config_diag.cgi
           python3 -m py_compile bin/*.py
           bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min
@@ -41,11 +43,11 @@ jobs:
             --exclude '__pycache__/' \
             ./ /tmp/unifipoe-stage/
           find /tmp/unifipoe-stage -type f -exec touch -t 202608300000 {} +
-          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.17.zip")
-          sha256sum dist/LoxBerry-UniFi-PoE-0.7.17.zip
+          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.18.zip")
+          sha256sum dist/LoxBerry-UniFi-PoE-0.7.18.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: unifipoe-0.7.17-package
-          path: dist/LoxBerry-UniFi-PoE-0.7.17.zip
+          name: unifipoe-0.7.18-package
+          path: dist/LoxBerry-UniFi-PoE-0.7.18.zip
           retention-days: 7
           if-no-files-found: error
