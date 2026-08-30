@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.13
+
+- Hotfix: Daemon-Ordnererkennung ist nicht mehr von Autorenname oder Autoren-E-Mail abhängig.
+- Behebt den Ausfall der MQTT-/Statusdaten nach der Datenschutzbereinigung.
+- Fallback auf den Standardordner `unifipoe`, falls die LoxBerry-Plugindatenbank nicht gelesen werden kann.
+- Autorenanzeige auf `Marco Düthorn` geändert.
+- Native LoxBerry-Auswahl für automatische Updates wieder aktiviert.
+
 ## 0.7.12
 
 - Sitzungsgebundener HMAC-CSRF-Schutz für Admin-POSTs.
