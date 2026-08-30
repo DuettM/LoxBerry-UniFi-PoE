@@ -1,4 +1,4 @@
-name: Prepare UniFi PoE v0.7.18
+name: Prepare UniFi PoE v0.7.19
 on:
   push:
     paths:
@@ -10,25 +10,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch settings submit and version
+      - name: Patch robust settings save and version
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+
           p=Path('webfrontend/htmlauth/index.cgi')
           s=p.read_text()
-          old="function formData(action){let fd=new FormData(document.getElementById('settings-form'));fd.set('action',action);for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');return fd}"
-          new="function formData(action){let form=document.getElementById('settings-form'),fd=new FormData(form);fd.set('action',action);for(const id of ['controller','username','password']){let el=document.getElementById(id);if(el)fd.set(id,el.value||'')}for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');let q=new URLSearchParams();for(const [k,v] of fd.entries())q.append(k,String(v));return q.toString()}"
-          if old not in s: raise SystemExit('formData function not found')
-          s=s.replace(old,new)
-          s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('save')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('save')})")
-          s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('test')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('test')})")
+          old='<form id="settings-form" onsubmit="saveSettings(event)"><input type="hidden" name="action" value="save">'
+          new='<form id="settings-form" method="post" action="config.cgi" onsubmit="if(window.saveSettings){saveSettings(event);return false}"><input type="hidden" name="action" value="save"><input type="hidden" name="native" value="1"><input type="hidden" name="csrf" value="'."'.esc(hmac_sha256_hex($csrf_seed, ($c->{api_token}//''))).'".'">'
+          if old not in s: raise SystemExit('settings form opening not found')
+          s=s.replace(old,new,1)
+          oldfd="function formData(action){let form=document.getElementById('settings-form'),fd=new FormData(form);fd.set('action',action);for(const id of ['controller','username','password']){let el=document.getElementById(id);if(el)fd.set(id,el.value||'')}for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');let q=new URLSearchParams();for(const [k,v] of fd.entries())q.append(k,String(v));return q.toString()}"
+          newfd="function formData(action){let form=document.getElementById('settings-form'),fd=new FormData(form);fd.set('action',action);fd.set('native','0');for(const id of ['controller','username','password']){let el=document.getElementById(id);if(el)fd.set(id,el.value||'')}for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');let q=new URLSearchParams();for(const [k,v] of fd.entries())q.append(k,String(v));return q.toString()}"
+          if oldfd not in s: raise SystemExit('formData function not found')
+          s=s.replace(oldfd,newfd,1)
           p.write_text(s)
+
+          p=Path('webfrontend/htmlauth/config.cgi')
+          s=p.read_text()
+          header='print "Content-Type: application/json; charset=utf-8\\r\\nCache-Control: no-store\\r\\nX-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n";\n\nsub out { my ($obj)=@_; print encode_json($obj); exit; }'
+          repl='sub out { my ($obj)=@_; print "Content-Type: application/json; charset=utf-8\\r\\nCache-Control: no-store\\r\\nX-Content-Type-Options: nosniff\\r\\nReferrer-Policy: no-referrer\\r\\n\\r\\n"; print encode_json($obj); exit; }'
+          if header not in s: raise SystemExit('config response header block not found')
+          s=s.replace(header,repl,1)
+          old="my $sent=$ENV{HTTP_X_UNIFI_CSRF}//'';"
+          new="my $sent=$ENV{HTTP_X_UNIFI_CSRF}//''; $sent=$q->param('csrf')//'' if $sent eq '';"
+          if old not in s: raise SystemExit('csrf source not found')
+          s=s.replace(old,new,1)
+          old="for my $sf(qw(unifi_session.cookies unifi_session.json)){unlink \"$lbpdatadir/$sf\" if -e \"$lbpdatadir/$sf\";}\n  out({ok=>JSON::PP::true,message=>'Einstellungen dauerhaft gespeichert.',username=>$check->{username},controller=>$check->{controller},password_saved=>((defined($check->{password})&&$check->{password} ne '')?JSON::PP::true:JSON::PP::false),config_version=>$check->{config_version}});"
+          new="for my $sf(qw(unifi_session.cookies unifi_session.json)){unlink \"$lbpdatadir/$sf\" if -e \"$lbpdatadir/$sf\";}\n  if (($q->param('native')//'0') eq '1') { print \"Status: 303 See Other\\r\\nLocation: index.cgi?page=settings&saved=1\\r\\nCache-Control: no-store\\r\\n\\r\\n\"; exit; }\n  out({ok=>JSON::PP::true,message=>'Einstellungen dauerhaft gespeichert.',username=>$check->{username},controller=>$check->{controller},password_saved=>((defined($check->{password})&&$check->{password} ne '')?JSON::PP::true:JSON::PP::false),config_version=>$check->{config_version}});"
+          if old not in s: raise SystemExit('save success block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s)
+
           for fn in ['plugin.cfg','release.cfg','prerelease.cfg']:
-              q=Path(fn); t=q.read_text(); t=t.replace('0.7.17','0.7.18'); q.write_text(t)
+              q=Path(fn); t=q.read_text(); t=t.replace('0.7.18','0.7.19'); q.write_text(t)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg
-          git commit -m 'Fix UniFi credential form submission in v0.7.18'
+          git add webfrontend/htmlauth/index.cgi webfrontend/htmlauth/config.cgi plugin.cfg release.cfg prerelease.cfg
+          git commit -m 'Add native credential save fallback in v0.7.19'
           git push
