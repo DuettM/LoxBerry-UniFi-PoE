@@ -1,0 +1,140 @@
+name: Prepare UniFi PoE v0.7.21 isolated
+on:
+  push:
+    paths:
+      - '.github/workflows/prepare-v0721.yml'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch plugin
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/patch_v0721.py <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path('webfrontend/htmlauth/debug.cgi')
+          s=p.read_text()
+          old="my $q=CGI->new; my $log=\"$lbplogdir/unifipoe.log\"; my $action=$q->param('action')//'read';"
+          new="my $q=CGI->new; my $cfgfile=\"$lbpconfigdir/config.json\"; my $log=\"$lbplogdir/unifipoe.log\"; my $action=$q->param('action')//'read';"
+          if old not in s: raise SystemExit('debug declaration not found')
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('webfrontend/htmlauth/config.cgi')
+          s=p.read_text()
+          marker="my $action=$q->param('action')//''; my $cfg=read_cfg();\n"
+          block="""my $action=$q->param('action')//''; my $cfg=read_cfg();
+          if($action eq 'save_groups'){
+            reject_cross_site(); require_csrf();
+            out({ok=>JSON::PP::false,error=>'Gruppen können nur per POST gespeichert werden.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
+            my $groups_raw=$q->param('groups_json')//'[]'; my $aliases_raw=$q->param('aliases_json')//'{}';
+            my($gv,$av); eval{$gv=decode_json($groups_raw);1} or out({ok=>JSON::PP::false,error=>'Gruppen-Daten sind ungültig.'});
+            eval{$av=decode_json($aliases_raw);1} or out({ok=>JSON::PP::false,error=>'Portnamen-Daten sind ungültig.'});
+            out({ok=>JSON::PP::false,error=>'Gruppen müssen ein Array sein.'}) unless ref($gv) eq 'ARRAY';
+            out({ok=>JSON::PP::false,error=>'Portnamen müssen ein Objekt sein.'}) unless ref($av) eq 'HASH';
+            my %names;
+            for my $g (@$gv){
+              out({ok=>JSON::PP::false,error=>'Ungültiger Gruppeneintrag.'}) unless ref($g) eq 'HASH';
+              my $n=trim($g->{name}//''); out({ok=>JSON::PP::false,error=>'Gruppenname fehlt oder ist zu lang.'}) if $n eq ''||length($n)>80||$n=~/[\\r\\n\\0]/;
+              my $nk=lc($n); out({ok=>JSON::PP::false,error=>'Gruppenname doppelt: '.$n}) if $names{$nk}++;
+              $g->{name}=$n; my $ports=$g->{ports}; out({ok=>JSON::PP::false,error=>'Gruppe '.$n.' hat keine gültige Portliste.'}) unless ref($ports) eq 'ARRAY';
+              my %seen;
+              for my $x (@$ports){
+                out({ok=>JSON::PP::false,error=>'Ungültiger Port in Gruppe '.$n}) unless ref($x) eq 'HASH';
+                my $sw=trim($x->{switch}//''); my $port=$x->{port}//'';
+                out({ok=>JSON::PP::false,error=>'Ungültiger Switch/Port in Gruppe '.$n}) if $sw eq ''||length($sw)>128||$sw=~/[\\r\\n\\0]/||$port!~/^\\d+$/||$port<1||$port>512;
+                my $key=$sw.':'.$port; out({ok=>JSON::PP::false,error=>'Port doppelt in Gruppe '.$n}) if $seen{$key}++;
+                $x->{switch}=$sw; $x->{port}=int($port);
+              }
+            }
+            for my $k (keys %$av){
+              my $v=trim($av->{$k}//''); out({ok=>JSON::PP::false,error=>'Portname ungültig.'}) if length($k)>200||$k=~/[\\r\\n\\0]/||length($v)>100||$v=~/[\\r\\n\\0]/;
+              if($v eq ''){ delete $av->{$k}; } else { $av->{$k}=$v; }
+            }
+            $cfg->{groups}=$gv; $cfg->{aliases}=$av; $cfg->{config_version}=8; write_cfg_proven($cfg);
+            out({ok=>JSON::PP::true,message=>'Portnamen und Gruppen gespeichert.',groups=>$gv,aliases=>$av});
+          }
+          """
+          if marker not in s: raise SystemExit('config action marker not found')
+          p.write_text(s.replace(marker,block,1))
+
+          p=Path('webfrontend/htmlauth/index.cgi')
+          s=p.read_text()
+          old="my $groups_js = encode_json($c->{groups});\n"
+          if old not in s: raise SystemExit('groups_js not found')
+          s=s.replace(old,old+"my $aliases_js = encode_json($c->{aliases});\n",1)
+
+          start=s.find("print <<'GROUPS';")
+          end=s.find("GROUPS\n",start)
+          if start<0 or end<0: raise SystemExit('GROUPS block not found')
+          end+=len("GROUPS\n")
+          group_html="""print <<'GROUPS';
+          <section id=\"page-groups\" class=\"page\">
+           <div class=\"card\"><h2>◫ PoE-Gruppen</h2><div class=\"body\">
+            <p class=\"muted\" style=\"margin-top:0\">Ports auswählen, Portnamen vergeben und einen Gruppennamen speichern.</p>
+            <div id=\"groups-list\">Noch keine Gruppen geladen.</div>
+           </div></div>
+           <div class=\"card\"><h2>Gruppe erstellen / bearbeiten</h2><div class=\"body\">
+            <div class=\"field\" style=\"max-width:520px\"><label>Gruppenname</label><input id=\"group-name\" placeholder=\"z. B. Kameras Außen\"></div>
+            <div class=\"toolbar\" style=\"margin-top:12px\"><button type=\"button\" class=\"btn\" onclick=\"selectGroupPorts(true)\">Alle auswählen</button><button type=\"button\" class=\"btn\" onclick=\"selectGroupPorts(false)\">Keine auswählen</button><button type=\"button\" class=\"btn\" onclick=\"resetGroupEditor()\">Neu</button></div>
+            <div id=\"group-port-picker\" class=\"port-scroll full\"><div style=\"padding:12px\" class=\"muted\">Ports werden geladen …</div></div>
+            <div class=\"settings-actions\" style=\"margin-top:12px\"><button type=\"button\" class=\"btn btn-green\" onclick=\"saveGroupEditor()\">Gruppe speichern</button><span id=\"group-save-state\" class=\"save-state muted\"></span></div>
+           </div></div>
+          </section>
+          GROUPS
+          """
+          s=s[:start]+group_html+s[end:]
+
+          # Remove raw JSON editor from settings while preserving form close.
+          a=s.find("print '<div class=\\\"card\\\"><h2>Portnamen &amp; Gruppen</h2>")
+          if a<0: raise SystemExit('raw group settings card not found')
+          b=s.find("\n",a)
+          if b<0: raise SystemExit('raw group settings line end not found')
+          s=s[:a]+"print '</form></section>';\n"+s[b+1:]
+
+          old="TLS-Zertifikat prüfen</label><label><input type=\"checkbox\" name=\"watchdog_enabled\""
+          new="TLS-Zertifikat streng prüfen</label><span class=\"hint\">Bei selbstsigniertem UniFi-Zertifikat ausgeschaltet lassen; HTTPS bleibt trotzdem aktiv.</span><label><input type=\"checkbox\" name=\"watchdog_enabled\""
+          if old not in s: raise SystemExit('TLS label not found')
+          s=s.replace(old,new,1)
+
+          old="const API='api.cgi'; const CSRF=$csrf_js; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let DEVICES=[]; let CURRENT=0;"
+          new="const API='api.cgi'; const CSRF=$csrf_js; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let ALIASES=$aliases_js; let DEVICES=[]; let CURRENT=0; let EDIT_GROUP='';"
+          if old not in s: raise SystemExit('JS constants not found')
+          s=s.replace(old,new,1)
+
+          gs=s.find("function renderGroups(){")
+          ge=s.find("async function groupAction",gs)
+          if gs<0 or ge<0: raise SystemExit('group JS block not found')
+          newjs="""function renderGroups(){let el=document.getElementById('groups-list');if(!el)return;el.innerHTML=GROUPS.length?GROUPS.map(g=>{let gn=encodeURIComponent(g.name||'');return '<div class=\"group-row\"><div><b>'+h(g.name)+'</b><div class=\"muted\" style=\"font-size:12px\">'+(g.ports||[]).length+' Port(s)</div></div><div class=\"group-actions\"><button class=\"btn\" data-g=\"'+gn+'\" onclick=\"editGroup(decodeURIComponent(this.dataset.g))\">Bearbeiten</button><button class=\"btn btn-green\" data-g=\"'+gn+'\" onclick=\"groupAction(this.dataset.g,&quot;group-on&quot;)\">EIN</button><button class=\"btn btn-orange\" data-g=\"'+gn+'\" onclick=\"groupAction(this.dataset.g,&quot;group-cycle&quot;)\">↻</button><button class=\"btn btn-red\" data-g=\"'+gn+'\" onclick=\"groupAction(this.dataset.g,&quot;group-off&quot;)\">AUS</button><button class=\"btn btn-red\" data-g=\"'+gn+'\" onclick=\"deleteGroup(decodeURIComponent(this.dataset.g))\">Löschen</button></div></div>'}).join(''):'<span class=\"muted\">Noch keine Gruppen angelegt.</span>';renderGroupPortPicker()}
+          function portKey(sw,p){return String(sw)+':'+String(p)}
+          function renderGroupPortPicker(){let el=document.getElementById('group-port-picker');if(!el)return;if(!DEVICES.length){el.innerHTML='<div style=\"padding:12px\" class=\"muted\">Noch keine Switches geladen.</div>';return}let selected=new Set();if(EDIT_GROUP){let g=GROUPS.find(x=>(x.name||'').toLowerCase()===EDIT_GROUP.toLowerCase());for(const x of (g?.ports||[]))selected.add(portKey(x.switch,x.port))}el.innerHTML=DEVICES.map(d=>'<div style=\"padding:10px 12px;border-bottom:1px solid #e5eaed\"><b>'+h(d.name||d.mac||d.id)+'</b></div>'+(d.ports||[]).map(p=>{let k=portKey(d.id,p.port_idx),alias=ALIASES[k]||p.alias||p.name||('Port '+p.port_idx);return '<div style=\"display:grid;grid-template-columns:34px 70px minmax(180px,1fr);gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #edf0f2\"><input class=\"group-port-check\" type=\"checkbox\" data-switch=\"'+h(d.id)+'\" data-port=\"'+p.port_idx+'\" '+(selected.has(k)?'checked':'')+'><b>Port '+p.port_idx+'</b><input class=\"group-alias-input\" data-key=\"'+h(k)+'\" value=\"'+h(alias)+'\" placeholder=\"Portname\"></div>'}).join('')).join('')}
+          function selectGroupPorts(v){document.querySelectorAll('.group-port-check').forEach(x=>x.checked=!!v)}
+          function resetGroupEditor(){EDIT_GROUP='';let n=document.getElementById('group-name');if(n)n.value='';renderGroupPortPicker();let st=document.getElementById('group-save-state');if(st)st.textContent=''}
+          function editGroup(name){EDIT_GROUP=name;let n=document.getElementById('group-name');if(n)n.value=name;renderGroupPortPicker();n?.scrollIntoView({behavior:'smooth',block:'center'})}
+          function collectAliases(){let a={...ALIASES};document.querySelectorAll('.group-alias-input').forEach(x=>{let k=x.dataset.key,v=(x.value||'').trim();if(v)a[k]=v;else delete a[k]});return a}
+          async function persistGroups(nextGroups){let st=document.getElementById('group-save-state');if(st)st.textContent='Speichere …';let q=new URLSearchParams();q.set('action','save_groups');q.set('groups_json',JSON.stringify(nextGroups));q.set('aliases_json',JSON.stringify(collectAliases()));let j=await jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:q.toString()});if(!j.ok)throw new Error(j.error||'Gruppen konnten nicht gespeichert werden');GROUPS=j.groups||nextGroups;ALIASES=j.aliases||ALIASES;if(st)st.textContent='Gespeichert';renderGroups();setTimeout(()=>{if(st)st.textContent=''},1800)}
+          async function saveGroupEditor(){let name=(document.getElementById('group-name')?.value||'').trim(),st=document.getElementById('group-save-state');if(!name){if(st)st.textContent='Gruppenname fehlt';return}let ports=[...document.querySelectorAll('.group-port-check:checked')].map(x=>({switch:x.dataset.switch,port:Number(x.dataset.port)}));if(!ports.length){if(st)st.textContent='Mindestens einen Port auswählen';return}let next=GROUPS.filter(g=>(g.name||'').toLowerCase()!==(EDIT_GROUP||name).toLowerCase());next=next.filter(g=>(g.name||'').toLowerCase()!==name.toLowerCase());next.push({name,ports});try{await persistGroups(next);EDIT_GROUP=name}catch(e){if(st)st.textContent='Fehler: '+e.message}}
+          async function deleteGroup(name){if(!confirm('Gruppe '+name+' wirklich löschen?'))return;try{await persistGroups(GROUPS.filter(g=>(g.name||'').toLowerCase()!==name.toLowerCase()));if(EDIT_GROUP.toLowerCase()===name.toLowerCase())resetGroupEditor()}catch(e){alert(e.message)}}
+          """
+          s=s[:gs]+newjs+s[ge:]
+          p.write_text(s)
+
+          for fn in ['plugin.cfg','release.cfg','prerelease.cfg']:
+              q=Path(fn); t=q.read_text(); t=t.replace('0.7.20','0.7.21'); q.write_text(t)
+
+          cp=Path('CHANGELOG.md'); cs=cp.read_text()
+          if '## 0.7.21' not in cs:
+              cs="## 0.7.21\n- Fix: debug.cgi 500 error for dashboard self-test/watchdog status.\n- UI: Port names and groups moved to Groups page.\n- UI: Visual port selection, port-name editing, group create/edit/delete.\n- TLS: strict certificate verification clarified for self-signed UniFi certificates.\n\n"+cs
+              cp.write_text(cs)
+          PY
+          python3 /tmp/patch_v0721.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add webfrontend/htmlauth/debug.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg CHANGELOG.md
+          git commit -m 'Fix status CGI and add visual group editor in v0.7.21'
+          git push
