@@ -1,6 +1,6 @@
 #!/bin/bash
 # LoxBerry cron wrapper. Resolve the actual plugin folder from PluginDB;
-# never assume the preferred FOLDER from plugin.cfg.
+# never depend on author name/email for runtime folder detection.
 set -u
 if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
 ROOT="${LBHOMEDIR:-${LBHOME:-}}"
@@ -16,17 +16,17 @@ import json,sys
 try:
  d=json.load(open(sys.argv[1],encoding='utf-8'))
  for p in d.get('plugins',[]):
-  if p.get('name')=='unifipoe' and p.get('author_email')=='GitHub private vulnerability reporting':
+  if p.get('name')=='unifipoe':
    print(p.get('folder',''));break
 except Exception: pass
 PYDB
 )"
 fi
-# Legacy PluginDB fallback.
+# Legacy PluginDB fallback: match only immutable plugin name field.
 if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
-  FOLDER="$(awk -F'|' '$3=="GitHub private vulnerability reporting" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+  FOLDER="$(awk -F'|' '$5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
 fi
-[ -n "$FOLDER" ] || exit 0
+[ -n "$FOLDER" ] || FOLDER="unifipoe"
 WD="$ROOT/bin/plugins/$FOLDER/watchdog.py"
 CFG="$ROOT/config/plugins/$FOLDER/config.json"
 [ -x "$WD" ] && [ -r "$CFG" ] || exit 0
