@@ -24,11 +24,11 @@ jobs:
           s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('save')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('save')})")
           s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('test')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('test')})")
           p.write_text(s)
-          for fn in ['plugin.cfg','release.cfg','prerelease.cfg','.github/workflows/package-v0714.yml']:
+          for fn in ['plugin.cfg','release.cfg','prerelease.cfg']:
               q=Path(fn); t=q.read_text(); t=t.replace('0.7.17','0.7.18'); q.write_text(t)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg .github/workflows/package-v0714.yml
+          git add webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg
           git commit -m 'Fix UniFi credential form submission in v0.7.18'
           git push
