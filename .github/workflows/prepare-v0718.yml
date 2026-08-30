@@ -19,7 +19,7 @@ jobs:
           p=Path('webfrontend/htmlauth/index.cgi')
           s=p.read_text()
           old='<form id="settings-form" onsubmit="saveSettings(event)"><input type="hidden" name="action" value="save">'
-          new='<form id="settings-form" method="post" action="config.cgi" onsubmit="if(window.saveSettings){saveSettings(event);return false}"><input type="hidden" name="action" value="save"><input type="hidden" name="native" value="1"><input type="hidden" name="csrf" value="'."'.esc(hmac_sha256_hex($csrf_seed, ($c->{api_token}//''))).'".'">'
+          new='''<form id="settings-form" method="post" action="config.cgi" onsubmit="if(window.saveSettings){saveSettings(event);return false}"><input type="hidden" name="action" value="save"><input type="hidden" name="native" value="1"><input type="hidden" name="csrf" value="'.esc(hmac_sha256_hex($csrf_seed, ($c->{api_token}//''))).'">'''
           if old not in s: raise SystemExit('settings form opening not found')
           s=s.replace(old,new,1)
           oldfd="function formData(action){let form=document.getElementById('settings-form'),fd=new FormData(form);fd.set('action',action);for(const id of ['controller','username','password']){let el=document.getElementById(id);if(el)fd.set(id,el.value||'')}for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');let q=new URLSearchParams();for(const [k,v] of fd.entries())q.append(k,String(v));return q.toString()}"
