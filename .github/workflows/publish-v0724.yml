@@ -1,0 +1,45 @@
+name: Publish UniFi PoE v0.7.24
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-v0724.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download exact package artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-build
+          gh run download 33320766907 --repo "$GITHUB_REPOSITORY" --name unifipoe-0.7.24-package --dir release-build
+          test -f release-build/LoxBerry-UniFi-PoE-0.7.24.zip
+      - name: Verify SHA-256 and Ed25519 signature
+        run: |
+          set -euo pipefail
+          cp release-assets/v0.7.24/LoxBerry-UniFi-PoE-0.7.24.zip.sha256 release-build/
+          cp release-assets/v0.7.24/LoxBerry-UniFi-PoE-0.7.24.zip.sig release-build/
+          cd release-build
+          sha256sum -c LoxBerry-UniFi-PoE-0.7.24.zip.sha256
+          printf '302a300506032b6570032100e9a33e9c989020db24130fe7d5f3079517074ce54313dbc27fd730e6a21ebfc2' | xxd -r -p > public.der
+          openssl pkey -pubin -inform DER -in public.der -out public.pem
+          base64 -d LoxBerry-UniFi-PoE-0.7.24.zip.sig > signature.bin
+          openssl pkeyutl -verify -pubin -inkey public.pem -rawin -in LoxBerry-UniFi-PoE-0.7.24.zip -sigfile signature.bin
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create v0.7.24 \
+            release-build/LoxBerry-UniFi-PoE-0.7.24.zip \
+            release-build/LoxBerry-UniFi-PoE-0.7.24.zip.sha256 \
+            release-build/LoxBerry-UniFi-PoE-0.7.24.zip.sig \
+            --repo "$GITHUB_REPOSITORY" \
+            --target main \
+            --title 'UniFi PoE v0.7.24' \
+            --notes 'Adds connected-device detection per switch port using UniFi wired-client data with LLDP fallback, plus device details in the PoE port overview and group editor.'
