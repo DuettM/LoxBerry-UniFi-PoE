@@ -1,0 +1,34 @@
+name: Prepare UniFi PoE v0.7.18
+on:
+  push:
+    paths:
+      - '.github/workflows/prepare-v0718.yml'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch settings submit and version
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('webfrontend/htmlauth/index.cgi')
+          s=p.read_text()
+          old="function formData(action){let fd=new FormData(document.getElementById('settings-form'));fd.set('action',action);for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');return fd}"
+          new="function formData(action){let form=document.getElementById('settings-form'),fd=new FormData(form);fd.set('action',action);for(const id of ['controller','username','password']){let el=document.getElementById(id);if(el)fd.set(id,el.value||'')}for(const n of ['verify_ssl','watchdog_enabled','mqtt_enabled','mqtt_listen_enabled','mqtt_retain','mqtt_command_token_required'])if(!fd.has(n))fd.set(n,'0');let q=new URLSearchParams();for(const [k,v] of fd.entries())q.append(k,String(v));return q.toString()}"
+          if old not in s: raise SystemExit('formData function not found')
+          s=s.replace(old,new)
+          s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('save')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('save')})")
+          s=s.replace("jsonFetch('config.cgi',{method:'POST',body:formData('test')})","jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:formData('test')})")
+          p.write_text(s)
+          for fn in ['plugin.cfg','release.cfg','prerelease.cfg','.github/workflows/package-v0714.yml']:
+              q=Path(fn); t=q.read_text(); t=t.replace('0.7.17','0.7.18'); q.write_text(t)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg .github/workflows/package-v0714.yml
+          git commit -m 'Fix UniFi credential form submission in v0.7.18'
+          git push
