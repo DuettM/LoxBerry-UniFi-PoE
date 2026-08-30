@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.14
+
+- Interne LoxBerry-Plugin-Identität auf den ursprünglichen Autorenwert zurückgesetzt, damit Updates keine Doppelinstallation erzeugen.
+- UniFi-Daemon und Watchdog-Cron erkennen Installationen nur noch über die Plugin-ID `unifipoe`.
+- Speichern der UniFi-Zugangsdaten verbessert: Benutzername wird bereinigt, gespeichert und anschließend direkt verifiziert.
+- Konfigurationsschema beim Speichern auf Version 8 korrigiert.
+- Native LoxBerry-AutoUpdate-Auswahl bleibt aktiviert.
+
 ## 0.7.13
 
 - Hotfix: Daemon-Ordnererkennung ist nicht mehr von Autorenname oder Autoren-E-Mail abhängig.
