@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import argparse, json, ssl, sys, time, urllib.request, urllib.error, http.cookiejar, socket, struct, random, os, tempfile, urllib.parse, fcntl, hashlib
 
-VERSION='0.7.23'
+VERSION='0.7.24'
 class UniFiError(RuntimeError):
     def __init__(self, message, status=None, code='', retry_after=None):
         super().__init__(message); self.status=status; self.code=code or ''; self.retry_after=retry_after
@@ -167,7 +167,7 @@ class UniFi:
         self.lock_path=os.path.join(self.session_dir,'unifi_session.lock') if self.session_dir else ''
         self.fingerprint=hashlib.sha256((self.base+'\n'+str(cfg.get('username',''))+'\n'+self.site+'\n'+self.kind).encode()).hexdigest()
         self.cookies=http.cookiejar.MozillaCookieJar(self.cookie_path) if self.session_enabled and self.cookie_path else http.cookiejar.CookieJar()
-        self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookies),urllib.request.HTTPSHandler(context=ctx)); self.csrf=None; self.logged_in=False; self._devices_cache=None
+        self.opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.cookies),urllib.request.HTTPSHandler(context=ctx)); self.csrf=None; self.logged_in=False; self._devices_cache=None; self._clients_cache=None
         self._load_session()
     def _session_dir(self):
         if not self.session_enabled:return ''
@@ -300,6 +300,54 @@ class UniFi:
             else:raise
         return self._devices_cache
     def switches(self):return [d for d in self.devices() if d.get('type')=='usw']
+    @staticmethod
+    def _norm_mac(v):
+        return ''.join(ch for ch in str(v or '').lower() if ch in '0123456789abcdef')
+    def clients(self,refresh=False):
+        if self._clients_cache is not None and not refresh:return self._clients_cache
+        self.login()
+        path=f'{self.prefix()}/api/s/{self.site}/stat/sta'
+        try:
+            self._clients_cache=self.req('GET',path).get('data',[])
+        except UniFiError as e:
+            if self.session_enabled and e.status==401:
+                self._clear_session();self.logged_in=False;self.login(force=True);self._clients_cache=self.req('GET',path).get('data',[])
+            else:
+                debug_log(self.cfg,'warning',f'Client-Liste konnte nicht gelesen werden: {e}')
+                self._clients_cache=[]
+        return self._clients_cache
+    def _client_for_port(self,d,port_idx):
+        dmac=self._norm_mac(d.get('mac'))
+        matches=[]
+        for c in self.clients():
+            cmac=self._norm_mac(c.get('sw_mac') or c.get('switch_mac') or c.get('uplink_mac'))
+            cp=c.get('sw_port') if c.get('sw_port') is not None else c.get('switch_port')
+            try: cp=int(cp)
+            except Exception: continue
+            if cmac==dmac and cp==int(port_idx):matches.append(c)
+        if not matches:return None
+        matches.sort(key=lambda c:(int(c.get('last_seen',0) or 0),int(c.get('uptime',0) or 0)),reverse=True)
+        c=matches[0]
+        name=c.get('name') or c.get('hostname') or c.get('dev_name') or c.get('oui') or c.get('mac') or 'Gerät'
+        model=c.get('model') or c.get('dev_cat_name') or c.get('dev_family') or ''
+        return {'name':name,'hostname':c.get('hostname') or '','mac':c.get('mac') or '','ip':c.get('ip') or c.get('fixed_ip') or '','vendor':c.get('oui') or c.get('manufacturer') or '','model':model,'source':'client'}
+    def _lldp_for_port(self,d,port_idx):
+        rows=(d.get('lldp_table') or d.get('lldp') or [])
+        for x in rows:
+            raw=x.get('local_port_idx')
+            if raw is None:raw=x.get('port_idx')
+            if raw is None:raw=x.get('local_port_num')
+            if raw is None:raw=x.get('local_port')
+            try: pi=int(raw)
+            except Exception: continue
+            if pi!=int(port_idx):continue
+            name=x.get('system_name') or x.get('sys_name') or x.get('device_name') or x.get('chassis_id') or 'LLDP-Gerät'
+            ip=x.get('management_address') or x.get('management_ip') or x.get('ip') or ''
+            model=x.get('model') or x.get('system_description') or x.get('sys_desc') or ''
+            return {'name':name,'hostname':x.get('system_name') or x.get('sys_name') or '','mac':x.get('chassis_id') or '','ip':ip,'vendor':'','model':model,'source':'lldp'}
+        return None
+    def attached_for_port(self,d,port_idx):
+        return self._client_for_port(d,port_idx) or self._lldp_for_port(d,port_idx) or {}
     def find_device(self,ident):
         norm=ident.lower().replace('-','').replace(':','')
         for d in self.switches():
@@ -350,9 +398,11 @@ class UniFi:
             for p in d.get('port_table',[]):
                 if p.get('port_poe') or p.get('poe_mode') is not None:
                     idx=p.get('port_idx');mode,power,current,voltage=self.normalized_metrics(d,p)
-                    ports.append({'port_idx':idx,'name':p.get('name'),'alias':aliases.get(f'{d.get("_id")}:{idx}',''),'poe_mode':mode,'poe_power':power,'poe_current':current,'poe_voltage':voltage,'link_up':p.get('up')})
+                    attached=self.attached_for_port(d,idx)
+                    ports.append({'port_idx':idx,'name':p.get('name'),'alias':aliases.get(f'{d.get("_id")}:{idx}',''),'poe_mode':mode,'poe_power':power,'poe_current':current,'poe_voltage':voltage,'link_up':p.get('up'),'attached':attached})
             ds.append({'id':d.get('_id'),'name':d.get('name'),'mac':d.get('mac'),'model':d.get('model'),'ip':d.get('ip'),'ports':ports})
-        debug_log(self.cfg,'debug',f'Device scan: {len(ds)} Switch(es), {sum(len(d["ports"]) for d in ds)} PoE-Port(s)');return {'ok':True,'devices':ds}
+        attached_count=sum(1 for d in ds for p in d['ports'] if p.get('attached'))
+        debug_log(self.cfg,'debug',f'Device scan: {len(ds)} Switch(es), {sum(len(d["ports"]) for d in ds)} PoE-Port(s), {attached_count} Gerät(e) zugeordnet');return {'ok':True,'devices':ds}
     def group(self,name,cmd):
         g=next((x for x in self.cfg.get('groups',[]) if x.get('name','').lower()==name.lower()),None)
         if not g:raise UniFiError('Gruppe nicht gefunden: '+name)

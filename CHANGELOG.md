@@ -1,3 +1,9 @@
+## 0.7.24
+- Ports: angeschlossene Geräte aus UniFi Wired-Client-Daten zuordnen.
+- Ports: LLDP-Fallback für UniFi/AP/Switch-Nachbarn und andere LLDP-Geräte.
+- UI: Gerätename, IP, MAC, Hersteller/Modell in PoE-Portansicht.
+- UI: angeschlossenes Gerät auch in der Gruppenauswahl sichtbar.
+
 ## 0.7.23
 - Logging: erfolgreicher Selbsttest wird auf INFO protokolliert.
 - Logging: Watchdog schreibt beim Start/Wechsel auf OK einen INFO-Eintrag, zyklische OK-Läufe bleiben DEBUG.
