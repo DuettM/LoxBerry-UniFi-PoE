@@ -10,52 +10,145 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Add dashboard health API and bump version
+      - name: Fix status CGI and build visual group editor
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
-          # api.cgi: add a read-only cached health command alongside devices/selftest.
-          p=Path('webfrontend/htmlauth/api.cgi')
+          # 1) debug.cgi 500: $cfgfile was used under strict without declaration.
+          p=Path('webfrontend/htmlauth/debug.cgi')
           s=p.read_text()
-          old="my %allowed=map { $_=>1 } qw(devices selftest on off status cycle group-on group-off group-cycle);"
-          new="my %allowed=map { $_=>1 } qw(devices selftest health on off status cycle group-on group-off group-cycle);"
-          if old not in s: raise SystemExit('allowed command list not found')
+          old="my $q=CGI->new; my $log=\"$lbplogdir/unifipoe.log\"; my $action=$q->param('action')//'read';"
+          new="my $q=CGI->new; my $cfgfile=\"$lbpconfigdir/config.json\"; my $log=\"$lbplogdir/unifipoe.log\"; my $action=$q->param('action')//'read';"
+          if old not in s: raise SystemExit('debug.cgi declaration marker not found')
           s=s.replace(old,new,1)
-          old="my @args=(\"$lbpbindir/unifipoe.py\",'--config',$cfgfile,$cmd);"
-          health="""if($cmd eq 'health'){
-  sub read_json_file { my ($path)=@_; my $data={}; if(open my $f,'<',$path){ local $/; my $raw=<$f>//''; close $f; eval{$data=decode_json($raw);1} or $data={}; } return $data; }
-  my $self=read_json_file(\"$lbpdatadir/selftest.json\");
-  my $watch=read_json_file(\"$lbpdatadir/watchdog.json\");
-  my $cfg=read_json_file($cfgfile);
-  out({ok=>JSON::PP::true,selftest=>$self,selftest_exists=>(-f \"$lbpdatadir/selftest.json\"?JSON::PP::true:JSON::PP::false),watchdog=>$watch,watchdog_exists=>(-f \"$lbpdatadir/watchdog.json\"?JSON::PP::true:JSON::PP::false),watchdog_enabled=>(($cfg->{watchdog}&&$cfg->{watchdog}{enabled})?JSON::PP::true:JSON::PP::false)});
-}
-my @args=(\"$lbpbindir/unifipoe.py\",'--config',$cfgfile,$cmd);"""
-          if old not in s: raise SystemExit('backend args marker not found')
-          s=s.replace(old,health,1)
           p.write_text(s)
 
-          # index.cgi: system/watchdog tiles use the same working API layer.
+          # 2) config.cgi: dedicated safe POST endpoint for visual group/alias editor.
+          p=Path('webfrontend/htmlauth/config.cgi')
+          s=p.read_text()
+          marker="my $action=$q->param('action')//''; my $cfg=read_cfg();\n"
+          block=r'''my $action=$q->param('action')//''; my $cfg=read_cfg();
+if($action eq 'save_groups'){
+  reject_cross_site(); require_csrf();
+  out({ok=>JSON::PP::false,error=>'Gruppen können nur per POST gespeichert werden.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
+  my $groups_raw=$q->param('groups_json')//'[]'; my $aliases_raw=$q->param('aliases_json')//'{}';
+  my($gv,$av); eval{$gv=decode_json($groups_raw);1} or out({ok=>JSON::PP::false,error=>'Gruppen-Daten sind ungültig.'});
+  eval{$av=decode_json($aliases_raw);1} or out({ok=>JSON::PP::false,error=>'Portnamen-Daten sind ungültig.'});
+  out({ok=>JSON::PP::false,error=>'Gruppen müssen ein Array sein.'}) unless ref($gv) eq 'ARRAY';
+  out({ok=>JSON::PP::false,error=>'Portnamen müssen ein Objekt sein.'}) unless ref($av) eq 'HASH';
+  my %names;
+  for my $g (@$gv){
+    out({ok=>JSON::PP::false,error=>'Ungültiger Gruppeneintrag.'}) unless ref($g) eq 'HASH';
+    my $n=trim($g->{name}//''); out({ok=>JSON::PP::false,error=>'Gruppenname fehlt oder ist zu lang.'}) if $n eq ''||length($n)>80||$n=~/[\r\n\0]/;
+    my $nk=lc($n); out({ok=>JSON::PP::false,error=>'Gruppenname doppelt: '.$n}) if $names{$nk}++;
+    $g->{name}=$n; my $ports=$g->{ports}; out({ok=>JSON::PP::false,error=>'Gruppe '.$n.' hat keine gültige Portliste.'}) unless ref($ports) eq 'ARRAY';
+    my %seen;
+    for my $x (@$ports){
+      out({ok=>JSON::PP::false,error=>'Ungültiger Port in Gruppe '.$n}) unless ref($x) eq 'HASH';
+      my $sw=trim($x->{switch}//''); my $port=$x->{port}//'';
+      out({ok=>JSON::PP::false,error=>'Ungültiger Switch/Port in Gruppe '.$n}) if $sw eq ''||length($sw)>128||$sw=~/[\r\n\0]/||$port!~/^\d+$/||$port<1||$port>512;
+      my $key=$sw.':'.$port; out({ok=>JSON::PP::false,error=>'Port doppelt in Gruppe '.$n}) if $seen{$key}++;
+      $x->{switch}=$sw; $x->{port}=int($port);
+    }
+  }
+  for my $k (keys %$av){
+    my $v=trim($av->{$k}//''); out({ok=>JSON::PP::false,error=>'Portname ungültig.'}) if length($k)>200||$k=~/[\r\n\0]/||length($v)>100||$v=~/[\r\n\0]/;
+    if($v eq ''){ delete $av->{$k}; } else { $av->{$k}=$v; }
+  }
+  $cfg->{groups}=$gv; $cfg->{aliases}=$av; $cfg->{config_version}=8; write_cfg_proven($cfg);
+  out({ok=>JSON::PP::true,message=>'Portnamen und Gruppen gespeichert.',groups=>$gv,aliases=>$av});
+}
+'''
+          if marker not in s: raise SystemExit('config action marker not found')
+          s=s.replace(marker,block,1)
+          p.write_text(s)
+
+          # 3) index.cgi: visual group editor, aliases stay on Groups page only.
           p=Path('webfrontend/htmlauth/index.cgi')
           s=p.read_text()
-          old="async function loadSelftestStatus(){if(SELFTEST_CHECKED)return;SELFTEST_CHECKED=true;try{let j=await jsonFetch('debug.cgi?action=selftest'),st=j.selftest||{},age=st.timestamp?Math.floor(Date.now()/1000)-Number(st.timestamp):999999;if(j.exists&&st.timestamp){renderSelftestResult(st)}if(!j.exists||!st.timestamp||age>21600){await runSelftest(false)}}catch(e){document.getElementById('m-system').textContent='FEHLER';document.getElementById('m-system-sub').textContent='Selbstteststatus nicht lesbar'}}"
-          new="async function loadSelftestStatus(){if(SELFTEST_CHECKED)return;SELFTEST_CHECKED=true;try{let j=await call('cmd=health'),st=j.selftest||{},age=st.timestamp?Math.floor(Date.now()/1000)-Number(st.timestamp):999999;if(j.selftest_exists&&st.timestamp){renderSelftestResult(st)}if(!j.selftest_exists||!st.timestamp||age>21600){await runSelftest(false)}}catch(e){document.getElementById('m-system').textContent='FEHLER';document.getElementById('m-system-sub').textContent='Selbstteststatus nicht lesbar'}}"
-          if old not in s: raise SystemExit('loadSelftestStatus not found')
+          old="my $groups_js = encode_json($c->{groups});\n"
+          new="my $groups_js = encode_json($c->{groups});\nmy $aliases_js = encode_json($c->{aliases});\n"
+          if old not in s: raise SystemExit('groups_js marker not found')
           s=s.replace(old,new,1)
-          start=s.find("async function loadWatchdog(){")
-          end=s.find("async function loadLog(){",start)
-          if start<0 or end<0: raise SystemExit('loadWatchdog block not found')
-          new_watch="""async function loadWatchdog(){try{let j=await call('cmd=health'),w=j.watchdog||{},enabled=!!j.watchdog_enabled,exists=!!j.watchdog_exists;if(!enabled){document.getElementById('wd-ok').innerHTML='<span class=\"muted\">Deaktiviert</span>';for(const id of ['wd-last','wd-ms','wd-fails','wd-switches','wd-ports'])document.getElementById(id).textContent='–';document.getElementById('m-watchdog').textContent='AUS';document.getElementById('m-watchdog-sub').textContent='Deaktiviert';document.getElementById('sys-watchdog').innerHTML='<span class=\"muted\">Deaktiviert</span>';return}if(!exists||!w.timestamp){document.getElementById('wd-ok').innerHTML='<span class=\"warn\">Ausstehend</span>';document.getElementById('m-watchdog').textContent='START';document.getElementById('m-watchdog-sub').textContent='Warte auf erste Prüfung';document.getElementById('sys-watchdog').innerHTML='<span class=\"warn\">Wartet</span>';return}let age=Math.floor(Date.now()/1000)-Number(w.timestamp||0),stale=age>180;document.getElementById('wd-ok').innerHTML=w.ok&&!stale?'<span class=\"ok\">OK</span>':(stale?'<span class=\"warn\">Veraltet</span>':'<span class=\"bad\">Fehler</span>');document.getElementById('wd-last').textContent=w.last_success?new Date(w.last_success*1000).toLocaleString():'–';document.getElementById('wd-ms').textContent=(w.response_ms??'–')+' ms';document.getElementById('wd-fails').textContent=w.consecutive_failures??'–';document.getElementById('wd-switches').textContent=w.switches??'–';document.getElementById('wd-ports').textContent=w.ports??'–';document.getElementById('m-watchdog').textContent=w.ok&&!stale?'OK':(stale?'ALT':'FEHLER');document.getElementById('m-watchdog-sub').textContent=(stale?'Status veraltet · ':'Letzte Prüfung: ')+new Date(w.timestamp*1000).toLocaleTimeString();document.getElementById('sys-watchdog').innerHTML=w.ok&&!stale?'<span class=\"ok\">Aktiv · OK</span>':(stale?'<span class=\"warn\">Aktiv · Status veraltet</span>':'<span class=\"bad\">Aktiv · Fehler</span>')}catch(e){document.getElementById('m-watchdog').textContent='FEHLER';document.getElementById('m-watchdog-sub').textContent='Status nicht lesbar';document.getElementById('sys-watchdog').innerHTML='<span class=\"bad\">Fehler</span>'}}
-"""
-          s=s[:start]+new_watch+s[end:]
+
+          start=s.find("print <<'GROUPS';")
+          end=s.find("GROUPS\n",start)
+          if start<0 or end<0: raise SystemExit('GROUPS section markers not found')
+          end += len("GROUPS\n")
+          group_html=r'''print <<'GROUPS';
+<section id="page-groups" class="page">
+ <div class="card"><h2>◫ PoE-Gruppen</h2><div class="body">
+  <p class="muted" style="margin-top:0">Ports auswählen, optional Portnamen vergeben und anschließend einen Gruppennamen speichern.</p>
+  <div id="groups-list">Noch keine Gruppen geladen.</div>
+ </div></div>
+ <div class="card"><h2>Gruppe erstellen / bearbeiten</h2><div class="body">
+  <div class="field" style="max-width:520px"><label>Gruppenname</label><input id="group-name" placeholder="z. B. Kameras Außen"></div>
+  <div class="toolbar" style="margin-top:12px"><button type="button" class="btn" onclick="selectGroupPorts(true)">Alle auswählen</button><button type="button" class="btn" onclick="selectGroupPorts(false)">Keine auswählen</button><button type="button" class="btn" onclick="resetGroupEditor()">Neu</button></div>
+  <div id="group-port-picker" class="port-scroll full"><div style="padding:12px" class="muted">Ports werden geladen …</div></div>
+  <div class="settings-actions" style="margin-top:12px"><button type="button" class="btn btn-green" onclick="saveGroupEditor()">Gruppe speichern</button><span id="group-save-state" class="save-state muted"></span></div>
+ </div></div>
+</section>
+GROUPS
+'''
+          s=s[:start]+group_html+s[end:]
+
+          # Remove raw JSON group/alias card from Settings; keep only form close.
+          pat=re.compile(r"print '<div class=\\\"card\\\"><h2>Portnamen &amp; Gruppen</h2>.*?</section>';\n",re.S)
+          if not pat.search(s): raise SystemExit('raw group settings card not found')
+          s=pat.sub("print '</form></section>';\n",s,count=1)
+
+          # Clarify strict TLS certificate validation.
+          old="TLS-Zertifikat prüfen</label><label><input type=\"checkbox\" name=\"watchdog_enabled\""
+          new="TLS-Zertifikat streng prüfen</label><span class=\"hint\">Bei selbstsigniertem UniFi-Zertifikat ausgeschaltet lassen; HTTPS bleibt trotzdem aktiv.</span><label><input type=\"checkbox\" name=\"watchdog_enabled\""
+          if old not in s: raise SystemExit('TLS label marker not found')
+          s=s.replace(old,new,1)
+
+          old="const API='api.cgi'; const CSRF=$csrf_js; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let DEVICES=[]; let CURRENT=0;"
+          new="const API='api.cgi'; const CSRF=$csrf_js; const PUBLIC_API=$public_api_js; const TOKEN=$token_js; const INITIAL_PAGE=$page_js; let GROUPS=$groups_js; let ALIASES=$aliases_js; let DEVICES=[]; let CURRENT=0; let EDIT_GROUP='';"
+          if old not in s: raise SystemExit('JS constants marker not found')
+          s=s.replace(old,new,1)
+
+          # Replace group renderer and add visual editor functions.
+          gs=s.find("function renderGroups(){")
+          ge=s.find("async function groupAction",gs)
+          if gs<0 or ge<0: raise SystemExit('renderGroups function block not found')
+          newjs=r'''function renderGroups(){let el=document.getElementById('groups-list');if(!el)return;el.innerHTML=GROUPS.length?GROUPS.map(g=>{let gn=encodeURIComponent(g.name||'');return '<div class="group-row"><div><b>'+h(g.name)+'</b><div class="muted" style="font-size:12px">'+(g.ports||[]).length+' Port(s)</div></div><div class="group-actions"><button class="btn" data-g="'+gn+'" onclick="editGroup(decodeURIComponent(this.dataset.g))">Bearbeiten</button><button class="btn btn-green" data-g="'+gn+'" onclick="groupAction(this.dataset.g,&quot;group-on&quot;)">EIN</button><button class="btn btn-orange" data-g="'+gn+'" onclick="groupAction(this.dataset.g,&quot;group-cycle&quot;)">↻</button><button class="btn btn-red" data-g="'+gn+'" onclick="groupAction(this.dataset.g,&quot;group-off&quot;)">AUS</button><button class="btn btn-red" data-g="'+gn+'" onclick="deleteGroup(decodeURIComponent(this.dataset.g))">Löschen</button></div></div>'}).join(''):'<span class="muted">Noch keine Gruppen angelegt.</span>';renderGroupPortPicker()}
+function portKey(sw,p){return String(sw)+':'+String(p)}
+function renderGroupPortPicker(){let el=document.getElementById('group-port-picker');if(!el)return;if(!DEVICES.length){el.innerHTML='<div style="padding:12px" class="muted">Noch keine Switches geladen.</div>';return}let selected=new Set();if(EDIT_GROUP){let g=GROUPS.find(x=>(x.name||'').toLowerCase()===EDIT_GROUP.toLowerCase());for(const x of (g?.ports||[]))selected.add(portKey(x.switch,x.port))}el.innerHTML=DEVICES.map(d=>'<div style="padding:10px 12px;border-bottom:1px solid #e5eaed"><b>'+h(d.name||d.mac||d.id)+'</b></div>'+(d.ports||[]).map(p=>{let k=portKey(d.id,p.port_idx),alias=ALIASES[k]||p.alias||p.name||('Port '+p.port_idx);return '<div style="display:grid;grid-template-columns:34px 70px minmax(180px,1fr);gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #edf0f2"><input class="group-port-check" type="checkbox" data-switch="'+h(d.id)+'" data-port="'+p.port_idx+'" '+(selected.has(k)?'checked':'')+'><b>Port '+p.port_idx+'</b><input class="group-alias-input" data-key="'+h(k)+'" value="'+h(alias)+'" placeholder="Portname"></div>'}).join('')).join('')}
+function selectGroupPorts(v){document.querySelectorAll('.group-port-check').forEach(x=>x.checked=!!v)}
+function resetGroupEditor(){EDIT_GROUP='';let n=document.getElementById('group-name');if(n)n.value='';renderGroupPortPicker();let s=document.getElementById('group-save-state');if(s)s.textContent=''}
+function editGroup(name){EDIT_GROUP=name;let n=document.getElementById('group-name');if(n)n.value=name;renderGroupPortPicker();document.getElementById('group-name')?.scrollIntoView({behavior:'smooth',block:'center'})}
+function collectAliases(){let a={...ALIASES};document.querySelectorAll('.group-alias-input').forEach(x=>{let k=x.dataset.key,v=(x.value||'').trim();if(v)a[k]=v;else delete a[k]});return a}
+async function persistGroups(nextGroups){let st=document.getElementById('group-save-state');if(st)st.textContent='Speichere …';let q=new URLSearchParams();q.set('action','save_groups');q.set('groups_json',JSON.stringify(nextGroups));q.set('aliases_json',JSON.stringify(collectAliases()));let j=await jsonFetch('config.cgi',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body:q.toString()});if(!j.ok)throw new Error(j.error||'Gruppen konnten nicht gespeichert werden');GROUPS=j.groups||nextGroups;ALIASES=j.aliases||ALIASES;if(st)st.textContent='Gespeichert';renderGroups();setTimeout(()=>{if(st)st.textContent=''},1800)}
+async function saveGroupEditor(){let name=(document.getElementById('group-name')?.value||'').trim(),st=document.getElementById('group-save-state');if(!name){if(st)st.textContent='Gruppenname fehlt';return}let ports=[...document.querySelectorAll('.group-port-check:checked')].map(x=>({switch:x.dataset.switch,port:Number(x.dataset.port)}));if(!ports.length){if(st)st.textContent='Mindestens einen Port auswählen';return}let next=GROUPS.filter(g=>(g.name||'').toLowerCase()!==(EDIT_GROUP||name).toLowerCase());let same=next.findIndex(g=>(g.name||'').toLowerCase()===name.toLowerCase());if(same>=0)next.splice(same,1);next.push({name,ports});try{await persistGroups(next);EDIT_GROUP=name}catch(e){if(st)st.textContent='Fehler: '+e.message}}
+async function deleteGroup(name){if(!confirm('Gruppe '+name+' wirklich löschen?'))return;try{await persistGroups(GROUPS.filter(g=>(g.name||'').toLowerCase()!==name.toLowerCase()));if(EDIT_GROUP.toLowerCase()===name.toLowerCase())resetGroupEditor()}catch(e){alert(e.message)}}
+'''
+          s=s[:gs]+newjs+s[ge:]
+
+          # Whenever devices refresh, redraw available group ports as well.
+          old="renderQuickPorts();renderPorts();renderGroups();renderGeneratorSwitches();"
+          new="renderQuickPorts();renderPorts();renderGroups();renderGeneratorSwitches();"
+          # renderGroups now calls renderGroupPortPicker, so no extra call needed.
+          if old not in s: raise SystemExit('device render marker not found')
+
           p.write_text(s)
 
+          # Version bump.
           for fn in ['plugin.cfg','release.cfg','prerelease.cfg']:
               q=Path(fn); t=q.read_text(); t=t.replace('0.7.20','0.7.21'); q.write_text(t)
+
+          # Changelog entry.
+          cp=Path('CHANGELOG.md'); cs=cp.read_text()
+          entry='''## 0.7.21\n- Fix: `debug.cgi` 500 error repaired, so dashboard self-test and watchdog status can be read again.\n- UI: Port names and groups moved out of Settings into the Groups page.\n- UI: Visual group editor with selectable PoE ports, editable port names, edit/delete actions.\n- TLS: clarified that certificate verification is strict and should stay off for self-signed UniFi certificates.\n\n'''
+          if '## 0.7.21' not in cs:
+              cs=entry+cs
+              cp.write_text(cs)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add webfrontend/htmlauth/api.cgi webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg
-          git commit -m 'Use health API for dashboard status in v0.7.21'
+          git add webfrontend/htmlauth/debug.cgi webfrontend/htmlauth/config.cgi webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg CHANGELOG.md
+          git commit -m 'Fix dashboard status and add visual group editor in v0.7.21'
           git push
