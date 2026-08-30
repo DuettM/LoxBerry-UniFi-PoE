@@ -1,0 +1,30 @@
+name: Prepare UniFi PoE v0.7.14
+on:
+  push:
+    paths:
+      - '.github/workflows/prepare-v0714.yml'
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update release metadata
+        run: |
+          set -euo pipefail
+          sed -i 's/VERSION=0.7.13/VERSION=0.7.14/g; s#/v0.7.13/#/v0.7.14/#g; s/-0.7.13.zip/-0.7.14.zip/g' release.cfg prerelease.cfg
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('CHANGELOG.md')
+          s=p.read_text()
+          entry='''## 0.7.14\n\n- Interne LoxBerry-Plugin-Identität auf den ursprünglichen Autorenwert zurückgesetzt, damit Updates keine Doppelinstallation erzeugen.\n- UniFi-Daemon und Watchdog-Cron erkennen Installationen nur noch über die Plugin-ID `unifipoe`.\n- Speichern der UniFi-Zugangsdaten verbessert: Benutzername wird bereinigt, gespeichert und anschließend direkt verifiziert.\n- Konfigurationsschema beim Speichern auf Version 8 korrigiert.\n- Native LoxBerry-AutoUpdate-Auswahl bleibt aktiviert.\n\n'''
+          if '## 0.7.14' not in s:
+              s=s.replace('# Changelog\n\n','# Changelog\n\n'+entry,1)
+          p.write_text(s)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add release.cfg prerelease.cfg CHANGELOG.md
+          git commit -m 'Prepare UniFi PoE v0.7.14 metadata'
+          git push
