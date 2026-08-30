@@ -16,16 +16,16 @@ import json,sys
 try:
  d=json.load(open(sys.argv[1],encoding='utf-8'))
  for p in d.get('plugins',[]):
-  if p.get('name')=='unifipoe' and p.get('author_email')=='GitHub private vulnerability reporting':
+  if p.get('name')=='unifipoe':
    print(p.get('folder',''));break
 except Exception: pass
 PYDB
 )"
 fi
 if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
-  FOLDER="$(awk -F'|' '$3=="GitHub private vulnerability reporting" && $5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+  FOLDER="$(awk -F'|' '$5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
 fi
-[ -n "$FOLDER" ] || exit 0
+[ -n "$FOLDER" ] || FOLDER="unifipoe"
 BIN="$ROOT/bin/plugins/$FOLDER"
 CFG="$ROOT/config/plugins/$FOLDER/config.json"
 LOG="$ROOT/log/plugins/$FOLDER/mqtt-daemon.log"
