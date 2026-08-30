@@ -1,0 +1,49 @@
+name: Package UniFi PoE v0.7.14
+on:
+  push:
+    paths:
+      - '.github/workflows/package-v0714.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate sources
+        run: |
+          set -euo pipefail
+          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.14"
+          grep -q '^NAME=Düthorn Marco$' plugin.cfg
+          grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
+          grep -q '^VERSION=0.7.14$' release.cfg
+          grep -q '^VERSION=0.7.14$' prerelease.cfg
+          grep -q 'config_version} = 8' webfrontend/htmlauth/config.cgi
+          python3 -m py_compile bin/*.py
+          bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min
+          if grep -R -n --exclude='plugin.cfg' --exclude-dir='.git' --exclude-dir='releases' --exclude-dir='.github' -E 'GitHub private vulnerability reporting' .; then
+            echo 'Broken privacy-cleanup placeholder found'; exit 1
+          fi
+      - name: Build deterministic ZIP
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/unifipoe-stage dist
+          mkdir -p /tmp/unifipoe-stage dist
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'dist/' \
+            --exclude 'releases/' \
+            --exclude 'release-signatures/' \
+            --exclude '__pycache__/' \
+            ./ /tmp/unifipoe-stage/
+          find /tmp/unifipoe-stage -type f -exec touch -t 202608300000 {} +
+          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.14.zip")
+          sha256sum dist/LoxBerry-UniFi-PoE-0.7.14.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unifipoe-0.7.14-package
+          path: dist/LoxBerry-UniFi-PoE-0.7.14.zip
+          retention-days: 7
+          if-no-files-found: error
