@@ -1,0 +1,23 @@
+name: Apply UniFi PoE v0.7.22
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-v0722.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          python3 tools/patch_v0722.py
+          python3 -m py_compile bin/*.py
+          bash -n postinstall.sh postupgrade.sh preupgrade.sh cron/cron.01min daemon/daemon
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add webfrontend/htmlauth/api.cgi webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg CHANGELOG.md
+          git commit -m 'Fix dashboard health status in v0.7.22'
+          git push
