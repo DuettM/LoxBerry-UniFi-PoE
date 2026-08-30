@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 use strict; use warnings; use CGI; use JSON::PP; use LoxBerry::System; use Digest::SHA qw(hmac_sha256_hex);
-my $q=CGI->new; my $log="$lbplogdir/unifipoe.log"; my $action=$q->param('action')//'read';
+my $q=CGI->new; my $cfgfile="$lbpconfigdir/config.json"; my $log="$lbplogdir/unifipoe.log"; my $action=$q->param('action')//'read';
 print "Content-Type: application/json; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\n\r\n";
 sub ct_eq {
   my ($a,$b)=@_; return 0 if !defined($a)||!defined($b)||length($a)!=length($b);

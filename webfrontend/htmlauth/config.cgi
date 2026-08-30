@@ -74,6 +74,36 @@ sub write_cfg_proven {
 }
 
 my $action=$q->param('action')//''; my $cfg=read_cfg();
+if($action eq 'save_groups'){
+  reject_cross_site(); require_csrf();
+  out({ok=>JSON::PP::false,error=>'Gruppen können nur per POST gespeichert werden.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
+  my $groups_raw=$q->param('groups_json')//'[]'; my $aliases_raw=$q->param('aliases_json')//'{}';
+  my($gv,$av); eval{$gv=decode_json($groups_raw);1} or out({ok=>JSON::PP::false,error=>'Gruppen-Daten sind ungültig.'});
+  eval{$av=decode_json($aliases_raw);1} or out({ok=>JSON::PP::false,error=>'Portnamen-Daten sind ungültig.'});
+  out({ok=>JSON::PP::false,error=>'Gruppen müssen ein Array sein.'}) unless ref($gv) eq 'ARRAY';
+  out({ok=>JSON::PP::false,error=>'Portnamen müssen ein Objekt sein.'}) unless ref($av) eq 'HASH';
+  my %names;
+  for my $g (@$gv){
+    out({ok=>JSON::PP::false,error=>'Ungültiger Gruppeneintrag.'}) unless ref($g) eq 'HASH';
+    my $n=trim($g->{name}//''); out({ok=>JSON::PP::false,error=>'Gruppenname fehlt oder ist zu lang.'}) if $n eq ''||length($n)>80||$n=~/[\r\n\0]/;
+    my $nk=lc($n); out({ok=>JSON::PP::false,error=>'Gruppenname doppelt: '.$n}) if $names{$nk}++;
+    $g->{name}=$n; my $ports=$g->{ports}; out({ok=>JSON::PP::false,error=>'Gruppe '.$n.' hat keine gültige Portliste.'}) unless ref($ports) eq 'ARRAY';
+    my %seen;
+    for my $x (@$ports){
+      out({ok=>JSON::PP::false,error=>'Ungültiger Port in Gruppe '.$n}) unless ref($x) eq 'HASH';
+      my $sw=trim($x->{switch}//''); my $port=$x->{port}//'';
+      out({ok=>JSON::PP::false,error=>'Ungültiger Switch/Port in Gruppe '.$n}) if $sw eq ''||length($sw)>128||$sw=~/[\r\n\0]/||$port!~/^\d+$/||$port<1||$port>512;
+      my $key=$sw.':'.$port; out({ok=>JSON::PP::false,error=>'Port doppelt in Gruppe '.$n}) if $seen{$key}++;
+      $x->{switch}=$sw; $x->{port}=int($port);
+    }
+  }
+  for my $k (keys %$av){
+    my $v=trim($av->{$k}//''); out({ok=>JSON::PP::false,error=>'Portname ungültig.'}) if length($k)>200||$k=~/[\r\n\0]/||length($v)>100||$v=~/[\r\n\0]/;
+    if($v eq ''){ delete $av->{$k}; } else { $av->{$k}=$v; }
+  }
+  $cfg->{groups}=$gv; $cfg->{aliases}=$av; $cfg->{config_version}=8; write_cfg_proven($cfg);
+  out({ok=>JSON::PP::true,message=>'Portnamen und Gruppen gespeichert.',groups=>$gv,aliases=>$av});
+}
 if($action eq 'save'){
   reject_cross_site();require_csrf();out({ok=>JSON::PP::false,error=>'Speichern ist nur per POST erlaubt.'}) if uc($ENV{REQUEST_METHOD}//'GET') ne 'POST';
   $cfg=overlay_from_request($cfg,0);validate_cfg($cfg);out({ok=>JSON::PP::false,error=>'UDM/Controller-Adresse fehlt.'}) unless $cfg->{controller};out({ok=>JSON::PP::false,error=>'Benutzername fehlt.'}) unless defined($cfg->{username})&&$cfg->{username} ne '';out({ok=>JSON::PP::false,error=>'Controller-Typ ungültig.'}) unless ($cfg->{controller_type}//'')=~/^(?:unifios|classic)$/;

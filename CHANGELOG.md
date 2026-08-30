@@ -1,3 +1,9 @@
+## 0.7.21
+- Fix: debug.cgi 500 error for dashboard self-test/watchdog status.
+- UI: Port names and groups moved to Groups page.
+- UI: Visual port selection, port-name editing, group create/edit/delete.
+- TLS: strict certificate verification clarified for self-signed UniFi certificates.
+
 # Changelog
 
 ## 0.7.14
