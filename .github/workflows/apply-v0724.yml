@@ -1,0 +1,38 @@
+name: Apply UniFi PoE v0.7.24
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-v0724.yml'
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: |
+          set -euo pipefail
+          python3 tools/patch_v0724.py
+          python3 -m py_compile bin/*.py
+          grep -q "VERSION='0.7.24'" bin/unifipoe.py
+          grep -q '^VERSION=0.7.24$' plugin.cfg
+          grep -q 'stat/sta' bin/unifipoe.py
+          grep -q 'attached_for_port' bin/unifipoe.py
+          grep -q 'Angeschlossenes Gerät' webfrontend/htmlauth/index.cgi
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('webfrontend/htmlauth/index.cgi').read_text()
+          start=s.find('print qq~<script>')
+          end=s.find('</script>~;',start)
+          assert start>=0 and end>start
+          js=s[start+len('print qq~<script>'):end]
+          js=js.replace('$csrf_js','"x"').replace('$public_api_js','"/x"').replace('$token_js','"x"').replace('$page_js','"overview"').replace('$groups_js','[]').replace('$aliases_js','{}')
+          Path('/tmp/index.js').write_text(js)
+          PY
+          node --check /tmp/index.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bin/unifipoe.py webfrontend/htmlauth/index.cgi plugin.cfg CHANGELOG.md
+          git commit -m 'Add connected-device detection in v0.7.24'
+          git push
