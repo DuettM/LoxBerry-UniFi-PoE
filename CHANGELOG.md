@@ -1,3 +1,7 @@
+## 0.7.22
+- Fix: Dashboard Systemtest/Watchdog use api.cgi health endpoint instead of debug.cgi.
+- Fix: Watchdog kick uses authenticated POST.
+
 ## 0.7.21
 - Fix: debug.cgi 500 error for dashboard self-test/watchdog status.
 - UI: Port names and groups moved to Groups page.
