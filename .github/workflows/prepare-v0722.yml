@@ -66,3 +66,4 @@ my @args=("$lbpbindir/unifipoe.py",'--config',$cfgfile,$cmd);'''
           git add webfrontend/htmlauth/api.cgi webfrontend/htmlauth/index.cgi plugin.cfg release.cfg prerelease.cfg CHANGELOG.md
           git commit -m 'Fix dashboard health status in v0.7.22'
           git push
+# trigger 2
