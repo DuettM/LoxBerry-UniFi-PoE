@@ -19,7 +19,7 @@ jobs:
           grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
           grep -q '^VERSION=0.7.14$' release.cfg
           grep -q '^VERSION=0.7.14$' prerelease.cfg
-          grep -q 'config_version} = 8' webfrontend/htmlauth/config.cgi
+          grep -q 'config_version}=8' webfrontend/htmlauth/config.cgi
           python3 -m py_compile bin/*.py
           bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min
           if grep -R -n --exclude='plugin.cfg' --exclude-dir='.git' --exclude-dir='releases' --exclude-dir='.github' -E 'GitHub private vulnerability reporting' .; then
