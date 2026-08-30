@@ -1,4 +1,4 @@
-name: Package UniFi PoE v0.7.14
+name: Package UniFi PoE v0.7.15
 on:
   push:
     paths:
@@ -14,11 +14,11 @@ jobs:
       - name: Validate sources
         run: |
           set -euo pipefail
-          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.14"
+          test "$(awk -F= '/^VERSION=/{print $2; exit}' plugin.cfg)" = "0.7.15"
           grep -q '^NAME=Düthorn Marco$' plugin.cfg
           grep -q '^AUTOMATIC_UPDATES=true$' plugin.cfg
-          grep -q '^VERSION=0.7.14$' release.cfg
-          grep -q '^VERSION=0.7.14$' prerelease.cfg
+          grep -q '^VERSION=0.7.15$' release.cfg
+          grep -q '^VERSION=0.7.15$' prerelease.cfg
           grep -q 'config_version}=8' webfrontend/htmlauth/config.cgi
           python3 -m py_compile bin/*.py
           bash -n postinstall.sh preupgrade.sh postupgrade.sh daemon/daemon cron/cron.01min
@@ -39,11 +39,11 @@ jobs:
             --exclude '__pycache__/' \
             ./ /tmp/unifipoe-stage/
           find /tmp/unifipoe-stage -type f -exec touch -t 202608300000 {} +
-          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.14.zip")
-          sha256sum dist/LoxBerry-UniFi-PoE-0.7.14.zip
+          (cd /tmp/unifipoe-stage && find . -type f -print | LC_ALL=C sort | zip -X -q -@ "$GITHUB_WORKSPACE/dist/LoxBerry-UniFi-PoE-0.7.15.zip")
+          sha256sum dist/LoxBerry-UniFi-PoE-0.7.15.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: unifipoe-0.7.14-package
-          path: dist/LoxBerry-UniFi-PoE-0.7.14.zip
+          name: unifipoe-0.7.15-package
+          path: dist/LoxBerry-UniFi-PoE-0.7.15.zip
           retention-days: 7
           if-no-files-found: error
