@@ -1,6 +1,6 @@
 #!/bin/bash
-# LoxBerry cron wrapper. Resolve the actual plugin folder from PluginDB;
-# never depend on author name/email for runtime folder detection.
+# LoxBerry cron wrapper. Resolve actual plugin folder from PluginDB and prefer
+# the primary unifipoe installation if duplicate suffix installs exist.
 set -u
 if [ -z "${LBHOMEDIR:-}" ] && [ -r /etc/environment ]; then . /etc/environment; fi
 ROOT="${LBHOMEDIR:-${LBHOME:-}}"
@@ -15,16 +15,18 @@ if [ -r "$DB" ]; then
 import json,sys
 try:
  d=json.load(open(sys.argv[1],encoding='utf-8'))
- for p in d.get('plugins',[]):
-  if p.get('name')=='unifipoe':
-   print(p.get('folder',''));break
-except Exception: pass
+ matches=[str(p.get('folder','')) for p in d.get('plugins',[]) if p.get('name')=='unifipoe' and p.get('folder')]
+ if 'unifipoe' in matches:
+  print('unifipoe')
+ elif matches:
+  print(sorted(matches)[0])
+except Exception:
+ pass
 PYDB
 )"
 fi
-# Legacy PluginDB fallback: match only immutable plugin name field.
 if [ -z "$FOLDER" ] && [ -r "$ROOT/data/system/plugindatabase.dat" ]; then
-  FOLDER="$(awk -F'|' '$5=="unifipoe" {print $6; exit}' "$ROOT/data/system/plugindatabase.dat")"
+  FOLDER="$(awk -F'|' '$5=="unifipoe" && $6=="unifipoe" {print $6; exit} $5=="unifipoe" && first=="" {first=$6} END{if(first!="") print first}' "$ROOT/data/system/plugindatabase.dat" | head -n1)"
 fi
 [ -n "$FOLDER" ] || FOLDER="unifipoe"
 WD="$ROOT/bin/plugins/$FOLDER/watchdog.py"
